@@ -1427,11 +1427,176 @@ struct SearchResult {
         : evaluation(eval), bestMove(move), depth_reached(depth), timeout_occurred(false) {}
 };
 
+// ==================== TRANSPOSITION TABLE ====================
+
+struct TTEntry {
+    uint64_t hash_key;
+    float evaluation;
+    Move best_move;
+    int depth;
+    int age;
+    enum NodeType {
+        EXACT = 0,
+        LOWER_BOUND = 1,
+        UPPER_BOUND = 2
+    } node_type;
+    
+    TTEntry() : hash_key(0), evaluation(0.0f), depth(-1), age(0), node_type(EXACT) {}
+};
+
+class TranspositionTable {
+private:
+    static constexpr size_t TABLE_SIZE = 1024 * 256;  // 256K entries
+    static constexpr size_t TABLE_MASK = TABLE_SIZE - 1;
+    static constexpr int MAX_BOARD_SIZE = 20;  // Reasonable max for our game
+    
+    std::vector<TTEntry> table;
+    int current_age;
+    
+    // Zobrist hash tables (integrated minimal implementation)
+    static uint64_t piece_square_table[7][MAX_BOARD_SIZE][MAX_BOARD_SIZE];
+    static uint64_t player_to_move_key;
+    static bool zobrist_initialized;
+    
+    static void initializeZobrist() {
+        if (zobrist_initialized) return;
+        
+        std::mt19937_64 rng(42);  // Fixed seed for reproducibility
+        std::uniform_int_distribution<uint64_t> dist;
+        
+        // Initialize piece-square table
+        for (int piece = 0; piece < 7; ++piece) {
+            for (int y = 0; y < MAX_BOARD_SIZE; ++y) {
+                for (int x = 0; x < MAX_BOARD_SIZE; ++x) {
+                    piece_square_table[piece][y][x] = dist(rng);
+                }
+            }
+        }
+        
+        player_to_move_key = dist(rng);
+        zobrist_initialized = true;
+    }
+    
+public:
+    TranspositionTable() : current_age(0) {
+        table.resize(TABLE_SIZE);
+        initializeZobrist();
+        clear();
+    }
+    
+    void clear() {
+        std::fill(table.begin(), table.end(), TTEntry{});
+        current_age++;
+    }
+    
+    void newSearch() {
+        current_age++;
+    }
+    
+    // Compute Zobrist hash for a game state
+    uint64_t computeHash(const GameState& state, bool isCircleToMove) const {
+        uint64_t hash = 0;
+        
+        // Hash piece positions
+        for (int y = 0; y < state.getRows(); ++y) {
+            for (int x = 0; x < state.getCols(); ++x) {
+                uint8_t piece = state.getPiece(x, y);
+                if (piece != EMPTY && y < MAX_BOARD_SIZE && x < MAX_BOARD_SIZE) {
+                    hash ^= piece_square_table[piece][y][x];
+                }
+            }
+        }
+        
+        // Hash player to move
+        if (isCircleToMove) {
+            hash ^= player_to_move_key;
+        }
+        
+        return hash;
+    }
+    
+    // Probe the transposition table
+    bool probe(uint64_t hash_key, int depth, float alpha, float beta, 
+               float& evaluation, Move& best_move) const {
+        
+        size_t index = hash_key & TABLE_MASK;
+        const TTEntry& entry = table[index];
+        
+        // Check if entry is valid and matches our position
+        if (entry.hash_key != hash_key || entry.depth < depth) {
+            return false;
+        }
+        
+        best_move = entry.best_move;
+        
+        // Check if we can use this evaluation based on node type
+        switch (entry.node_type) {
+            case TTEntry::EXACT:
+                evaluation = entry.evaluation;
+                return true;
+                
+            case TTEntry::LOWER_BOUND:
+                if (entry.evaluation >= beta) {
+                    evaluation = entry.evaluation;
+                    return true;
+                }
+                break;
+                
+            case TTEntry::UPPER_BOUND:
+                if (entry.evaluation <= alpha) {
+                    evaluation = entry.evaluation;
+                    return true;
+                }
+                break;
+        }
+        
+        return false;  // Can't use this entry's evaluation
+    }
+    
+    // Store position in transposition table
+    void store(uint64_t hash_key, float evaluation, const Move& best_move, 
+               int depth, float original_alpha, float beta) {
+        
+        size_t index = hash_key & TABLE_MASK;
+        TTEntry& entry = table[index];
+        
+        // Determine node type
+        TTEntry::NodeType node_type;
+        if (evaluation <= original_alpha) {
+            node_type = TTEntry::UPPER_BOUND;
+        } else if (evaluation >= beta) {
+            node_type = TTEntry::LOWER_BOUND;
+        } else {
+            node_type = TTEntry::EXACT;
+        }
+        
+        // Replace if empty, deeper, or much older
+        bool should_replace = (entry.hash_key == 0) ||
+                             (entry.depth <= depth) ||
+                             (entry.age < current_age - 2);
+        
+        if (should_replace) {
+            entry.hash_key = hash_key;
+            entry.evaluation = evaluation;
+            entry.best_move = best_move;
+            entry.depth = depth;
+            entry.node_type = node_type;
+            entry.age = current_age;
+        }
+    }
+};
+
+// Static member definitions
+uint64_t TranspositionTable::piece_square_table[7][MAX_BOARD_SIZE][MAX_BOARD_SIZE];
+uint64_t TranspositionTable::player_to_move_key;
+bool TranspositionTable::zobrist_initialized = false;
+
 class MinimaxEngine {
 private:
     BoardEvaluator* evaluator;
     MoveGenerator* moveGenerator;
     TimeManager timeManager;
+    TranspositionTable tt;
     
     // Search statistics
     int nodes_searched;
@@ -1447,6 +1612,9 @@ public:
         
         // Start timing
         timeManager.startSearch(remaining_time, opponent_time);
+        
+        // Initialize TT for new search
+        tt.newSearch();
         
         // Reset search statistics
         nodes_searched = 0;
@@ -1536,7 +1704,7 @@ private:
         return bestResult;
     }
     
-    // Negamax algorithm with alpha-beta pruning
+    // Negamax algorithm with alpha-beta pruning and TT
     float negamax(const GameState& position, int depth, float alpha, float beta, bool isCirclePlayer) {
         nodes_searched++;
         
@@ -1545,9 +1713,23 @@ private:
             return 0.0f;
         }
         
+        // Compute position hash
+        uint64_t position_hash = tt.computeHash(position, isCirclePlayer);
+        
+        // Probe transposition table
+        float tt_evaluation;
+        Move tt_best_move;
+        if (tt.probe(position_hash, depth, alpha, beta, tt_evaluation, tt_best_move)) {
+            return tt_evaluation;
+        }
+        
         // Terminal conditions
         if (depth == 0) {
-            return evaluator->basicEvaluateBoard(position, isCirclePlayer);
+            float evaluation = evaluator->basicEvaluateBoard(position, isCirclePlayer);
+            // Store leaf evaluation in TT
+            Move dummy_move;
+            tt.store(position_hash, evaluation, dummy_move, depth, alpha, beta);
+            return evaluation;
         }
         
         // Check for game ending (win condition)
@@ -1566,10 +1748,23 @@ private:
         
         if (moves.empty()) {
             // No moves available - likely a loss
-            return -50.0f;
+            float evaluation = -50.0f;
+            Move dummy_move;
+            tt.store(position_hash, evaluation, dummy_move, depth, alpha, beta);
+            return evaluation;
+        }
+        
+        // Move ordering: try TT best move first
+        if (!tt_best_move.action.empty()) {
+            auto it = std::find(moves.begin(), moves.end(), tt_best_move);
+            if (it != moves.end()) {
+                std::swap(*it, moves[0]);
+            }
         }
         
         float maxEval = -1000000.0f;
+        Move best_move = moves[0];  // Default best move
+        float original_alpha = alpha;
         
         for (const Move& move : moves) {
             if (timeManager.shouldStop()) break;
@@ -1583,13 +1778,20 @@ private:
             // Recursive search
             float evaluation = -negamax(newPosition, depth - 1, -beta, -alpha, !isCirclePlayer);
             
-            maxEval = std::max(maxEval, evaluation);
+            if (evaluation > maxEval) {
+                maxEval = evaluation;
+                best_move = move;
+            }
+            
             alpha = std::max(alpha, evaluation);
             
             if (beta <= alpha) {
                 break;  // Alpha-beta cutoff
             }
         }
+        
+        // Store result in transposition table
+        tt.store(position_hash, maxEval, best_move, depth, original_alpha, beta);
         
         return maxEval;
     }
@@ -1658,6 +1860,9 @@ public:
     // Get search statistics
     int getNodesSearched() const { return nodes_searched; }
     int getMaxDepthReached() const { return max_depth_reached; }
+    
+    // Clear transposition table (for testing or new games)
+    void clearTT() { tt.clear(); }
 };
 
 
