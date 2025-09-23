@@ -57,10 +57,9 @@ class StudentAgent(BaseAgent):
 
         self.agent = student_agent.StudentAgent(player)
 
-    def choose(self, game_state: dict,  rows: int, cols: int, score_cols: List[int], current_player_time: float, opponent_time: float) -> Optional[Dict[str, Any]]:
-        board = game_state["board"]
-        print(board)
-        cpp_move = self.agent.choose(board, rows, cols, score_cols)
+    def choose(self, board: List[List[Any]], rows: int, cols: int, score_cols: List[int], current_player_time: float, opponent_time: float) -> Optional[Dict[str, Any]]:
+        print(f"Board received by C++ wrapper: {len(board)}x{len(board[0]) if board else 0}")
+        cpp_move = self.agent.choose(board, rows, cols, score_cols, current_player_time, opponent_time)
         if cpp_move is None:
             return None
 
