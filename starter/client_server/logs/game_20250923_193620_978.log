@@ -1,0 +1,391 @@
+========================================
+AI AGENT DECISION LOG - Session 20250923_193620_978
+========================================
+Timestamp: 19:36:20.980
+Log Level: 0
+
+[19:36:21.040] [DECISION] [Move 1] === MOVE DECISION START === Player: square, Board: 13x12, Time: 60s (vs 59.994s)
+[19:36:26.041] [DEBUG] [Move 1] VALIDATION DEBUG: Generated 48 legal moves for validation
+[19:36:26.042] [DEBUG] [Move 1] VALIDATION DEBUG: Minimax returned move: push (3,4) -> (3,3)
+[19:36:26.042] [DEBUG] [Move 1] VALIDATION DEBUG: Legal move 1: move (3,3) -> (2,3)
+[19:36:26.042] [DEBUG] [Move 1] VALIDATION DEBUG: Legal move 2: move (3,3) -> (3,2)
+[19:36:26.042] [DEBUG] [Move 1] VALIDATION DEBUG: Legal move 3: push (3,3) -> (3,4)
+[19:36:26.042] [DEBUG] [Move 1] VALIDATION DEBUG: Legal move 4: flip (3,3) -> (3,3)
+[19:36:26.042] [DEBUG] [Move 1] VALIDATION DEBUG: Legal move 5: flip (3,3) -> (3,3)
+[19:36:26.042] [DEBUG] [Move 1] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:36:26.042] [DECISION] [Move 1] FINAL DECISION: push (3,4) -> (3,3) | Reasoning: Minimax search
+[19:36:26.042] [DECISION] [Move 1] === MOVE DECISION END ===
+[19:36:26.079] [DECISION] [Move 2] === MOVE DECISION START === Player: square, Board: 13x12, Time: 54.9979s (vs 59.9902s)
+[19:36:31.080] [DEBUG] [Move 2] VALIDATION DEBUG: Generated 49 legal moves for validation
+[19:36:31.080] [DEBUG] [Move 2] VALIDATION DEBUG: Minimax returned move: push (7,3) -> (8,3)
+[19:36:31.080] [DEBUG] [Move 2] VALIDATION DEBUG: Legal move 1: move (3,2) -> (2,2)
+[19:36:31.080] [DEBUG] [Move 2] VALIDATION DEBUG: Legal move 2: move (3,2) -> (3,1)
+[19:36:31.080] [DEBUG] [Move 2] VALIDATION DEBUG: Legal move 3: push (3,2) -> (3,3)
+[19:36:31.080] [DEBUG] [Move 2] VALIDATION DEBUG: Legal move 4: flip (3,2) -> (3,2)
+[19:36:31.080] [DEBUG] [Move 2] VALIDATION DEBUG: Legal move 5: flip (3,2) -> (3,2)
+[19:36:31.080] [DEBUG] [Move 2] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:36:31.080] [DECISION] [Move 2] FINAL DECISION: push (7,3) -> (8,3) | Reasoning: Minimax search
+[19:36:31.080] [DECISION] [Move 2] === MOVE DECISION END ===
+[19:36:31.117] [DECISION] [Move 3] === MOVE DECISION START === Player: square, Board: 13x12, Time: 49.9961s (vs 59.9861s)
+[19:36:36.117] [DEBUG] [Move 3] VALIDATION DEBUG: Generated 55 legal moves for validation
+[19:36:36.117] [DEBUG] [Move 3] VALIDATION DEBUG: Minimax returned move: flip (7,4) -> (7,4)
+[19:36:36.117] [DEBUG] [Move 3] VALIDATION DEBUG: Legal move 1: move (3,2) -> (2,2)
+[19:36:36.117] [DEBUG] [Move 3] VALIDATION DEBUG: Legal move 2: move (3,2) -> (3,1)
+[19:36:36.117] [DEBUG] [Move 3] VALIDATION DEBUG: Legal move 3: push (3,2) -> (3,3)
+[19:36:36.117] [DEBUG] [Move 3] VALIDATION DEBUG: Legal move 4: flip (3,2) -> (3,2)
+[19:36:36.117] [DEBUG] [Move 3] VALIDATION DEBUG: Legal move 5: flip (3,2) -> (3,2)
+[19:36:36.117] [DEBUG] [Move 3] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:36:36.117] [DECISION] [Move 3] FINAL DECISION: flip (7,4) -> (7,4) [vertical] | Reasoning: Minimax search
+[19:36:36.117] [DECISION] [Move 3] === MOVE DECISION END ===
+[19:36:36.154] [DECISION] [Move 4] === MOVE DECISION START === Player: square, Board: 13x12, Time: 44.9947s (vs 59.9829s)
+[19:36:41.155] [DEBUG] [Move 4] VALIDATION DEBUG: Generated 68 legal moves for validation
+[19:36:41.155] [DEBUG] [Move 4] VALIDATION DEBUG: Minimax returned move: move (3,2) -> (2,2)
+[19:36:41.155] [DEBUG] [Move 4] VALIDATION DEBUG: Legal move 1: move (3,2) -> (2,2)
+[19:36:41.155] [DEBUG] [Move 4] VALIDATION DEBUG: Legal move 2: move (3,2) -> (3,1)
+[19:36:41.155] [DEBUG] [Move 4] VALIDATION DEBUG: Legal move 3: push (3,2) -> (3,3)
+[19:36:41.155] [DEBUG] [Move 4] VALIDATION DEBUG: Legal move 4: flip (3,2) -> (3,2)
+[19:36:41.155] [DEBUG] [Move 4] VALIDATION DEBUG: Legal move 5: flip (3,2) -> (3,2)
+[19:36:41.155] [DEBUG] [Move 4] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:36:41.155] [DECISION] [Move 4] FINAL DECISION: move (3,2) -> (2,2) | Reasoning: Minimax search
+[19:36:41.155] [DECISION] [Move 4] === MOVE DECISION END ===
+[19:36:41.192] [DECISION] [Move 5] === MOVE DECISION START === Player: square, Board: 13x12, Time: 39.993s (vs 59.9798s)
+[19:36:46.193] [DEBUG] [Move 5] VALIDATION DEBUG: Generated 69 legal moves for validation
+[19:36:46.193] [DEBUG] [Move 5] VALIDATION DEBUG: Minimax returned move: move (3,3) -> (2,3)
+[19:36:46.193] [DEBUG] [Move 5] VALIDATION DEBUG: Legal move 1: move (2,2) -> (1,2)
+[19:36:46.193] [DEBUG] [Move 5] VALIDATION DEBUG: Legal move 2: move (2,2) -> (2,1)
+[19:36:46.193] [DEBUG] [Move 5] VALIDATION DEBUG: Legal move 3: move (2,2) -> (2,3)
+[19:36:46.193] [DEBUG] [Move 5] VALIDATION DEBUG: Legal move 4: move (2,2) -> (3,2)
+[19:36:46.193] [DEBUG] [Move 5] VALIDATION DEBUG: Legal move 5: flip (2,2) -> (2,2)
+[19:36:46.193] [DEBUG] [Move 5] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:36:46.193] [DECISION] [Move 5] FINAL DECISION: move (3,3) -> (2,3) | Reasoning: Minimax search
+[19:36:46.193] [DECISION] [Move 5] === MOVE DECISION END ===
+[19:36:46.230] [DECISION] [Move 6] === MOVE DECISION START === Player: square, Board: 13x12, Time: 34.9916s (vs 59.9766s)
+[19:36:51.180] [DEBUG] [Move 6] VALIDATION DEBUG: Generated 70 legal moves for validation
+[19:36:51.180] [DEBUG] [Move 6] VALIDATION DEBUG: Minimax returned move: push (2,3) -> (2,2)
+[19:36:51.180] [DEBUG] [Move 6] VALIDATION DEBUG: Legal move 1: move (2,2) -> (1,2)
+[19:36:51.180] [DEBUG] [Move 6] VALIDATION DEBUG: Legal move 2: move (2,2) -> (2,1)
+[19:36:51.180] [DEBUG] [Move 6] VALIDATION DEBUG: Legal move 3: move (2,2) -> (3,2)
+[19:36:51.180] [DEBUG] [Move 6] VALIDATION DEBUG: Legal move 4: push (2,2) -> (2,3)
+[19:36:51.180] [DEBUG] [Move 6] VALIDATION DEBUG: Legal move 5: flip (2,2) -> (2,2)
+[19:36:51.180] [DEBUG] [Move 6] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:36:51.180] [DECISION] [Move 6] FINAL DECISION: push (2,3) -> (2,2) | Reasoning: Minimax search
+[19:36:51.180] [DECISION] [Move 6] === MOVE DECISION END ===
+[19:36:51.217] [DECISION] [Move 7] === MOVE DECISION START === Player: square, Board: 13x12, Time: 30.0412s (vs 59.9729s)
+[19:36:55.425] [DEBUG] [Move 7] VALIDATION DEBUG: Generated 75 legal moves for validation
+[19:36:55.425] [DEBUG] [Move 7] VALIDATION DEBUG: Minimax returned move: flip (2,1) -> (2,1)
+[19:36:55.425] [DEBUG] [Move 7] VALIDATION DEBUG: Legal move 1: move (2,1) -> (1,1)
+[19:36:55.425] [DEBUG] [Move 7] VALIDATION DEBUG: Legal move 2: move (2,1) -> (2,0)
+[19:36:55.425] [DEBUG] [Move 7] VALIDATION DEBUG: Legal move 3: move (2,1) -> (3,1)
+[19:36:55.425] [DEBUG] [Move 7] VALIDATION DEBUG: Legal move 4: push (2,1) -> (2,2)
+[19:36:55.425] [DEBUG] [Move 7] VALIDATION DEBUG: Legal move 5: flip (2,1) -> (2,1)
+[19:36:55.425] [DEBUG] [Move 7] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:36:55.425] [DECISION] [Move 7] FINAL DECISION: flip (2,1) -> (2,1) [vertical] | Reasoning: Minimax search
+[19:36:55.425] [DECISION] [Move 7] === MOVE DECISION END ===
+[19:36:55.462] [DECISION] [Move 8] === MOVE DECISION START === Player: square, Board: 13x12, Time: 25.833s (vs 59.97s)
+[19:37:01.423] [DEBUG] [Move 8] VALIDATION DEBUG: Generated 84 legal moves for validation
+[19:37:01.423] [DEBUG] [Move 8] VALIDATION DEBUG: Minimax returned move: move (2,1) -> (1,1)
+[19:37:01.423] [DEBUG] [Move 8] VALIDATION DEBUG: Legal move 1: move (2,1) -> (1,1)
+[19:37:01.423] [DEBUG] [Move 8] VALIDATION DEBUG: Legal move 2: move (2,1) -> (2,0)
+[19:37:01.423] [DEBUG] [Move 8] VALIDATION DEBUG: Legal move 3: move (2,1) -> (3,1)
+[19:37:01.423] [DEBUG] [Move 8] VALIDATION DEBUG: Legal move 4: push (2,1) -> (2,2)
+[19:37:01.423] [DEBUG] [Move 8] VALIDATION DEBUG: Legal move 5: push (2,1) -> (2,2)
+[19:37:01.423] [DEBUG] [Move 8] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:01.423] [DECISION] [Move 8] FINAL DECISION: move (2,1) -> (1,1) | Reasoning: Minimax search
+[19:37:01.423] [DECISION] [Move 8] === MOVE DECISION END ===
+[19:37:01.461] [DECISION] [Move 9] === MOVE DECISION START === Player: square, Board: 13x12, Time: 19.8709s (vs 59.9634s)
+[19:37:05.930] [DEBUG] [Move 9] VALIDATION DEBUG: Generated 78 legal moves for validation
+[19:37:05.930] [DEBUG] [Move 9] VALIDATION DEBUG: Minimax returned move: move (1,1) -> (1,2)
+[19:37:05.930] [DEBUG] [Move 9] VALIDATION DEBUG: Legal move 1: move (1,1) -> (0,1)
+[19:37:05.930] [DEBUG] [Move 9] VALIDATION DEBUG: Legal move 2: move (1,1) -> (1,0)
+[19:37:05.930] [DEBUG] [Move 9] VALIDATION DEBUG: Legal move 3: move (1,1) -> (1,2)
+[19:37:05.930] [DEBUG] [Move 9] VALIDATION DEBUG: Legal move 4: move (1,1) -> (2,1)
+[19:37:05.930] [DEBUG] [Move 9] VALIDATION DEBUG: Legal move 5: flip (1,1) -> (1,1)
+[19:37:05.930] [DEBUG] [Move 9] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:05.930] [DECISION] [Move 9] FINAL DECISION: move (1,1) -> (1,2) | Reasoning: Minimax search
+[19:37:05.930] [DECISION] [Move 9] === MOVE DECISION END ===
+[19:37:05.968] [DECISION] [Move 10] === MOVE DECISION START === Player: square, Board: 13x12, Time: 15.401s (vs 59.9604s)
+[19:37:09.320] [DEBUG] [Move 10] VALIDATION DEBUG: Generated 95 legal moves for validation
+[19:37:09.320] [DEBUG] [Move 10] VALIDATION DEBUG: Minimax returned move: move (2,2) -> (1,11)
+[19:37:09.320] [DEBUG] [Move 10] VALIDATION DEBUG: Legal move 1: move (1,2) -> (0,2)
+[19:37:09.320] [DEBUG] [Move 10] VALIDATION DEBUG: Legal move 2: move (1,2) -> (1,1)
+[19:37:09.320] [DEBUG] [Move 10] VALIDATION DEBUG: Legal move 3: move (1,2) -> (1,3)
+[19:37:09.320] [DEBUG] [Move 10] VALIDATION DEBUG: Legal move 4: push (1,2) -> (2,2)
+[19:37:09.320] [DEBUG] [Move 10] VALIDATION DEBUG: Legal move 5: push (1,2) -> (2,2)
+[19:37:09.320] [DEBUG] [Move 10] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:09.320] [DECISION] [Move 10] FINAL DECISION: move (2,2) -> (1,11) | Reasoning: Minimax search
+[19:37:09.320] [DECISION] [Move 10] === MOVE DECISION END ===
+[19:37:09.358] [DECISION] [Move 11] === MOVE DECISION START === Player: square, Board: 13x12, Time: 12.0476s (vs 59.9557s)
+[19:37:11.871] [DEBUG] [Move 11] VALIDATION DEBUG: Generated 78 legal moves for validation
+[19:37:11.871] [DEBUG] [Move 11] VALIDATION DEBUG: Minimax returned move: move (8,3) -> (7,3)
+[19:37:11.871] [DEBUG] [Move 11] VALIDATION DEBUG: Legal move 1: move (1,2) -> (0,2)
+[19:37:11.871] [DEBUG] [Move 11] VALIDATION DEBUG: Legal move 2: move (1,2) -> (1,1)
+[19:37:11.871] [DEBUG] [Move 11] VALIDATION DEBUG: Legal move 3: move (1,2) -> (1,3)
+[19:37:11.871] [DEBUG] [Move 11] VALIDATION DEBUG: Legal move 4: move (1,2) -> (2,2)
+[19:37:11.871] [DEBUG] [Move 11] VALIDATION DEBUG: Legal move 5: flip (1,2) -> (1,2)
+[19:37:11.871] [DEBUG] [Move 11] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:11.871] [DECISION] [Move 11] FINAL DECISION: move (8,3) -> (7,3) | Reasoning: Minimax search
+[19:37:11.871] [DECISION] [Move 11] === MOVE DECISION END ===
+[19:37:11.908] [DECISION] [Move 12] === MOVE DECISION START === Player: square, Board: 13x12, Time: 9.534s (vs 59.9527s)
+[19:37:18.583] [DEBUG] [Move 12] VALIDATION DEBUG: Generated 100 legal moves for validation
+[19:37:18.583] [DEBUG] [Move 12] VALIDATION DEBUG: Minimax returned move: flip (4,3) -> (4,3)
+[19:37:18.583] [DEBUG] [Move 12] VALIDATION DEBUG: Legal move 1: move (1,2) -> (0,2)
+[19:37:18.583] [DEBUG] [Move 12] VALIDATION DEBUG: Legal move 2: move (1,2) -> (1,1)
+[19:37:18.583] [DEBUG] [Move 12] VALIDATION DEBUG: Legal move 3: move (1,2) -> (1,3)
+[19:37:18.583] [DEBUG] [Move 12] VALIDATION DEBUG: Legal move 4: move (1,2) -> (2,2)
+[19:37:18.583] [DEBUG] [Move 12] VALIDATION DEBUG: Legal move 5: flip (1,2) -> (1,2)
+[19:37:18.583] [DEBUG] [Move 12] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:18.583] [DECISION] [Move 12] FINAL DECISION: flip (4,3) -> (4,3) [horizontal] | Reasoning: Minimax search
+[19:37:18.583] [DECISION] [Move 12] === MOVE DECISION END ===
+[19:37:18.620] [DECISION] [Move 13] === MOVE DECISION START === Player: square, Board: 13x12, Time: 2.85835s (vs 59.9501s)
+[19:37:19.480] [DEBUG] [Move 13] VALIDATION DEBUG: Generated 114 legal moves for validation
+[19:37:19.480] [DEBUG] [Move 13] VALIDATION DEBUG: Minimax returned move: move (1,2) -> (1,1)
+[19:37:19.480] [DEBUG] [Move 13] VALIDATION DEBUG: Legal move 1: move (1,2) -> (0,2)
+[19:37:19.480] [DEBUG] [Move 13] VALIDATION DEBUG: Legal move 2: move (1,2) -> (1,1)
+[19:37:19.480] [DEBUG] [Move 13] VALIDATION DEBUG: Legal move 3: move (1,2) -> (1,3)
+[19:37:19.480] [DEBUG] [Move 13] VALIDATION DEBUG: Legal move 4: move (1,2) -> (2,2)
+[19:37:19.480] [DEBUG] [Move 13] VALIDATION DEBUG: Legal move 5: flip (1,2) -> (1,2)
+[19:37:19.480] [DEBUG] [Move 13] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:19.480] [DECISION] [Move 13] FINAL DECISION: move (1,2) -> (1,1) | Reasoning: Minimax search
+[19:37:19.480] [DECISION] [Move 13] === MOVE DECISION END ===
+[19:37:19.518] [DECISION] [Move 14] === MOVE DECISION START === Player: square, Board: 13x12, Time: 1.99753s (vs 59.9476s)
+[19:37:19.619] [DEBUG] [Move 14] VALIDATION DEBUG: Generated 114 legal moves for validation
+[19:37:19.619] [DEBUG] [Move 14] VALIDATION DEBUG: Minimax returned move: flip (1,1) -> (1,1)
+[19:37:19.619] [DEBUG] [Move 14] VALIDATION DEBUG: Legal move 1: move (1,1) -> (0,1)
+[19:37:19.619] [DEBUG] [Move 14] VALIDATION DEBUG: Legal move 2: move (1,1) -> (1,0)
+[19:37:19.619] [DEBUG] [Move 14] VALIDATION DEBUG: Legal move 3: move (1,1) -> (1,2)
+[19:37:19.619] [DEBUG] [Move 14] VALIDATION DEBUG: Legal move 4: move (1,1) -> (2,1)
+[19:37:19.619] [DEBUG] [Move 14] VALIDATION DEBUG: Legal move 5: flip (1,1) -> (1,1)
+[19:37:19.619] [DEBUG] [Move 14] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:19.619] [DECISION] [Move 14] FINAL DECISION: flip (1,1) -> (1,1) | Reasoning: Minimax search
+[19:37:19.619] [DECISION] [Move 14] === MOVE DECISION END ===
+[19:37:19.655] [DECISION] [Move 15] === MOVE DECISION START === Player: square, Board: 13x12, Time: 1.89577s (vs 59.9449s)
+[19:37:19.757] [DEBUG] [Move 15] VALIDATION DEBUG: Generated 108 legal moves for validation
+[19:37:19.757] [DEBUG] [Move 15] VALIDATION DEBUG: Minimax returned move: flip (1,1) -> (1,1)
+[19:37:19.757] [DEBUG] [Move 15] VALIDATION DEBUG: Legal move 1: move (1,1) -> (0,1)
+[19:37:19.757] [DEBUG] [Move 15] VALIDATION DEBUG: Legal move 2: move (1,1) -> (1,0)
+[19:37:19.757] [DEBUG] [Move 15] VALIDATION DEBUG: Legal move 3: move (1,1) -> (1,2)
+[19:37:19.757] [DEBUG] [Move 15] VALIDATION DEBUG: Legal move 4: move (1,1) -> (2,1)
+[19:37:19.757] [DEBUG] [Move 15] VALIDATION DEBUG: Legal move 5: flip (1,1) -> (1,1)
+[19:37:19.757] [DEBUG] [Move 15] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:19.757] [DECISION] [Move 15] FINAL DECISION: flip (1,1) -> (1,1) [horizontal] | Reasoning: Minimax search
+[19:37:19.757] [DECISION] [Move 15] === MOVE DECISION END ===
+[19:37:19.796] [DECISION] [Move 16] === MOVE DECISION START === Player: square, Board: 13x12, Time: 1.79361s (vs 59.9417s)
+[19:37:19.897] [DEBUG] [Move 16] VALIDATION DEBUG: Generated 108 legal moves for validation
+[19:37:19.897] [DEBUG] [Move 16] VALIDATION DEBUG: Minimax returned move: move (1,1) -> (1,0)
+[19:37:19.897] [DEBUG] [Move 16] VALIDATION DEBUG: Legal move 1: move (1,1) -> (0,1)
+[19:37:19.897] [DEBUG] [Move 16] VALIDATION DEBUG: Legal move 2: move (1,1) -> (1,0)
+[19:37:19.897] [DEBUG] [Move 16] VALIDATION DEBUG: Legal move 3: move (1,1) -> (1,2)
+[19:37:19.897] [DEBUG] [Move 16] VALIDATION DEBUG: Legal move 4: move (1,1) -> (2,1)
+[19:37:19.897] [DEBUG] [Move 16] VALIDATION DEBUG: Legal move 5: flip (1,1) -> (1,1)
+[19:37:19.897] [DEBUG] [Move 16] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:19.897] [DECISION] [Move 16] FINAL DECISION: move (1,1) -> (1,0) | Reasoning: Minimax search
+[19:37:19.897] [DECISION] [Move 16] === MOVE DECISION END ===
+[19:37:19.935] [DECISION] [Move 17] === MOVE DECISION START === Player: square, Board: 13x12, Time: 1.69125s (vs 59.9388s)
+[19:37:20.037] [DEBUG] [Move 17] VALIDATION DEBUG: Generated 137 legal moves for validation
+[19:37:20.037] [DEBUG] [Move 17] VALIDATION DEBUG: Minimax returned move: move (7,3) -> (6,5)
+[19:37:20.037] [DEBUG] [Move 17] VALIDATION DEBUG: Legal move 1: move (1,0) -> (0,0)
+[19:37:20.037] [DEBUG] [Move 17] VALIDATION DEBUG: Legal move 2: move (1,0) -> (1,1)
+[19:37:20.037] [DEBUG] [Move 17] VALIDATION DEBUG: Legal move 3: move (1,0) -> (2,0)
+[19:37:20.037] [DEBUG] [Move 17] VALIDATION DEBUG: Legal move 4: flip (1,0) -> (1,0)
+[19:37:20.037] [DEBUG] [Move 17] VALIDATION DEBUG: Legal move 5: rotate (1,0) -> (1,0)
+[19:37:20.037] [DEBUG] [Move 17] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:20.037] [DECISION] [Move 17] FINAL DECISION: move (7,3) -> (6,5) | Reasoning: Minimax search
+[19:37:20.037] [DECISION] [Move 17] === MOVE DECISION END ===
+[19:37:20.074] [DECISION] [Move 18] === MOVE DECISION START === Player: square, Board: 13x12, Time: 1.58925s (vs 59.9345s)
+[19:37:20.175] [DEBUG] [Move 18] VALIDATION DEBUG: Generated 113 legal moves for validation
+[19:37:20.175] [DEBUG] [Move 18] VALIDATION DEBUG: Minimax returned move: flip (1,0) -> (1,0)
+[19:37:20.175] [DEBUG] [Move 18] VALIDATION DEBUG: Legal move 1: move (1,0) -> (0,0)
+[19:37:20.175] [DEBUG] [Move 18] VALIDATION DEBUG: Legal move 2: move (1,0) -> (1,1)
+[19:37:20.175] [DEBUG] [Move 18] VALIDATION DEBUG: Legal move 3: move (1,0) -> (2,0)
+[19:37:20.175] [DEBUG] [Move 18] VALIDATION DEBUG: Legal move 4: flip (1,0) -> (1,0)
+[19:37:20.175] [DEBUG] [Move 18] VALIDATION DEBUG: Legal move 5: rotate (1,0) -> (1,0)
+[19:37:20.175] [DEBUG] [Move 18] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:20.175] [DECISION] [Move 18] FINAL DECISION: flip (1,0) -> (1,0) | Reasoning: Minimax search
+[19:37:20.175] [DECISION] [Move 18] === MOVE DECISION END ===
+[19:37:20.213] [DECISION] [Move 19] === MOVE DECISION START === Player: square, Board: 13x12, Time: 1.48748s (vs 59.9324s)
+[19:37:20.314] [DEBUG] [Move 19] VALIDATION DEBUG: Generated 131 legal moves for validation
+[19:37:20.314] [DEBUG] [Move 19] VALIDATION DEBUG: Minimax returned move: flip (1,0) -> (1,0)
+[19:37:20.314] [DEBUG] [Move 19] VALIDATION DEBUG: Legal move 1: move (1,0) -> (0,0)
+[19:37:20.314] [DEBUG] [Move 19] VALIDATION DEBUG: Legal move 2: move (1,0) -> (1,1)
+[19:37:20.314] [DEBUG] [Move 19] VALIDATION DEBUG: Legal move 3: move (1,0) -> (2,0)
+[19:37:20.314] [DEBUG] [Move 19] VALIDATION DEBUG: Legal move 4: flip (1,0) -> (1,0)
+[19:37:20.314] [DEBUG] [Move 19] VALIDATION DEBUG: Legal move 5: flip (1,0) -> (1,0)
+[19:37:20.314] [DEBUG] [Move 19] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:20.314] [DECISION] [Move 19] FINAL DECISION: flip (1,0) -> (1,0) [horizontal] | Reasoning: Minimax search
+[19:37:20.314] [DECISION] [Move 19] === MOVE DECISION END ===
+[19:37:20.350] [DECISION] [Move 20] === MOVE DECISION START === Player: square, Board: 13x12, Time: 1.38509s (vs 59.9302s)
+[19:37:20.452] [DEBUG] [Move 20] VALIDATION DEBUG: Generated 110 legal moves for validation
+[19:37:20.452] [DEBUG] [Move 20] VALIDATION DEBUG: Minimax returned move: flip (1,0) -> (1,0)
+[19:37:20.452] [DEBUG] [Move 20] VALIDATION DEBUG: Legal move 1: move (1,0) -> (0,0)
+[19:37:20.452] [DEBUG] [Move 20] VALIDATION DEBUG: Legal move 2: move (1,0) -> (1,1)
+[19:37:20.452] [DEBUG] [Move 20] VALIDATION DEBUG: Legal move 3: move (1,0) -> (2,0)
+[19:37:20.452] [DEBUG] [Move 20] VALIDATION DEBUG: Legal move 4: flip (1,0) -> (1,0)
+[19:37:20.452] [DEBUG] [Move 20] VALIDATION DEBUG: Legal move 5: rotate (1,0) -> (1,0)
+[19:37:20.452] [DEBUG] [Move 20] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:20.452] [DECISION] [Move 20] FINAL DECISION: flip (1,0) -> (1,0) | Reasoning: Minimax search
+[19:37:20.452] [DECISION] [Move 20] === MOVE DECISION END ===
+[19:37:20.489] [DECISION] [Move 21] === MOVE DECISION START === Player: square, Board: 13x12, Time: 1.28269s (vs 59.9273s)
+[19:37:20.592] [DEBUG] [Move 21] VALIDATION DEBUG: Generated 110 legal moves for validation
+[19:37:20.592] [DEBUG] [Move 21] VALIDATION DEBUG: Minimax returned move: move (1,0) -> (0,0)
+[19:37:20.592] [DEBUG] [Move 21] VALIDATION DEBUG: Legal move 1: move (1,0) -> (0,0)
+[19:37:20.592] [DEBUG] [Move 21] VALIDATION DEBUG: Legal move 2: move (1,0) -> (1,1)
+[19:37:20.592] [DEBUG] [Move 21] VALIDATION DEBUG: Legal move 3: move (1,0) -> (2,0)
+[19:37:20.592] [DEBUG] [Move 21] VALIDATION DEBUG: Legal move 4: flip (1,0) -> (1,0)
+[19:37:20.592] [DEBUG] [Move 21] VALIDATION DEBUG: Legal move 5: flip (1,0) -> (1,0)
+[19:37:20.592] [DEBUG] [Move 21] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:20.592] [DECISION] [Move 21] FINAL DECISION: move (1,0) -> (0,0) | Reasoning: Minimax search
+[19:37:20.592] [DECISION] [Move 21] === MOVE DECISION END ===
+[19:37:20.631] [DECISION] [Move 22] === MOVE DECISION START === Player: square, Board: 13x12, Time: 1.17898s (vs 59.9242s)
+[19:37:20.733] [DEBUG] [Move 22] VALIDATION DEBUG: Generated 130 legal moves for validation
+[19:37:20.733] [DEBUG] [Move 22] VALIDATION DEBUG: Minimax returned move: flip (0,0) -> (0,0)
+[19:37:20.733] [DEBUG] [Move 22] VALIDATION DEBUG: Legal move 1: move (0,0) -> (0,1)
+[19:37:20.733] [DEBUG] [Move 22] VALIDATION DEBUG: Legal move 2: move (0,0) -> (1,0)
+[19:37:20.733] [DEBUG] [Move 22] VALIDATION DEBUG: Legal move 3: flip (0,0) -> (0,0)
+[19:37:20.733] [DEBUG] [Move 22] VALIDATION DEBUG: Legal move 4: flip (0,0) -> (0,0)
+[19:37:20.733] [DEBUG] [Move 22] VALIDATION DEBUG: Legal move 5: move (4,3) -> (3,3)
+[19:37:20.733] [DEBUG] [Move 22] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:20.733] [DECISION] [Move 22] FINAL DECISION: flip (0,0) -> (0,0) [horizontal] | Reasoning: Minimax search
+[19:37:20.733] [DECISION] [Move 22] === MOVE DECISION END ===
+[19:37:20.770] [DECISION] [Move 23] === MOVE DECISION START === Player: square, Board: 13x12, Time: 1.07661s (vs 59.9221s)
+[19:37:20.871] [DEBUG] [Move 23] VALIDATION DEBUG: Generated 115 legal moves for validation
+[19:37:20.871] [DEBUG] [Move 23] VALIDATION DEBUG: Minimax returned move: flip (0,0) -> (0,0)
+[19:37:20.871] [DEBUG] [Move 23] VALIDATION DEBUG: Legal move 1: move (0,0) -> (0,1)
+[19:37:20.871] [DEBUG] [Move 23] VALIDATION DEBUG: Legal move 2: move (0,0) -> (1,0)
+[19:37:20.871] [DEBUG] [Move 23] VALIDATION DEBUG: Legal move 3: flip (0,0) -> (0,0)
+[19:37:20.871] [DEBUG] [Move 23] VALIDATION DEBUG: Legal move 4: rotate (0,0) -> (0,0)
+[19:37:20.871] [DEBUG] [Move 23] VALIDATION DEBUG: Legal move 5: move (4,3) -> (3,3)
+[19:37:20.871] [DEBUG] [Move 23] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:20.871] [DECISION] [Move 23] FINAL DECISION: flip (0,0) -> (0,0) | Reasoning: Minimax search
+[19:37:20.871] [DECISION] [Move 23] === MOVE DECISION END ===
+[19:37:20.908] [DECISION] [Move 24] === MOVE DECISION START === Player: square, Board: 13x12, Time: 0.975245s (vs 59.9199s)
+[19:37:21.011] [DEBUG] [Move 24] VALIDATION DEBUG: Generated 115 legal moves for validation
+[19:37:21.011] [DEBUG] [Move 24] VALIDATION DEBUG: Minimax returned move: move (5,3) -> (0,3)
+[19:37:21.011] [DEBUG] [Move 24] VALIDATION DEBUG: Legal move 1: move (0,0) -> (0,1)
+[19:37:21.011] [DEBUG] [Move 24] VALIDATION DEBUG: Legal move 2: move (0,0) -> (1,0)
+[19:37:21.011] [DEBUG] [Move 24] VALIDATION DEBUG: Legal move 3: flip (0,0) -> (0,0)
+[19:37:21.011] [DEBUG] [Move 24] VALIDATION DEBUG: Legal move 4: flip (0,0) -> (0,0)
+[19:37:21.011] [DEBUG] [Move 24] VALIDATION DEBUG: Legal move 5: move (4,3) -> (3,3)
+[19:37:21.011] [DEBUG] [Move 24] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:21.011] [DECISION] [Move 24] FINAL DECISION: move (5,3) -> (0,3) | Reasoning: Minimax search
+[19:37:21.011] [DECISION] [Move 24] === MOVE DECISION END ===
+[19:37:21.048] [DECISION] [Move 25] === MOVE DECISION START === Player: square, Board: 13x12, Time: 0.872386s (vs 59.9168s)
+[19:37:21.149] [DEBUG] [Move 25] VALIDATION DEBUG: Generated 111 legal moves for validation
+[19:37:21.149] [DEBUG] [Move 25] VALIDATION DEBUG: Minimax returned move: move (0,0) -> (1,0)
+[19:37:21.149] [DEBUG] [Move 25] VALIDATION DEBUG: Legal move 1: move (0,0) -> (0,1)
+[19:37:21.149] [DEBUG] [Move 25] VALIDATION DEBUG: Legal move 2: move (0,0) -> (1,0)
+[19:37:21.149] [DEBUG] [Move 25] VALIDATION DEBUG: Legal move 3: flip (0,0) -> (0,0)
+[19:37:21.149] [DEBUG] [Move 25] VALIDATION DEBUG: Legal move 4: flip (0,0) -> (0,0)
+[19:37:21.149] [DEBUG] [Move 25] VALIDATION DEBUG: Legal move 5: move (0,3) -> (0,2)
+[19:37:21.149] [DEBUG] [Move 25] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:21.149] [DECISION] [Move 25] FINAL DECISION: move (0,0) -> (1,0) | Reasoning: Minimax search
+[19:37:21.149] [DECISION] [Move 25] === MOVE DECISION END ===
+[19:37:21.187] [DECISION] [Move 26] === MOVE DECISION START === Player: square, Board: 13x12, Time: 0.770681s (vs 59.9148s)
+[19:37:21.288] [DEBUG] [Move 26] VALIDATION DEBUG: Generated 112 legal moves for validation
+[19:37:21.288] [DEBUG] [Move 26] VALIDATION DEBUG: Minimax returned move: move (6,4) -> (6,11)
+[19:37:21.288] [DEBUG] [Move 26] VALIDATION DEBUG: Legal move 1: move (1,0) -> (0,0)
+[19:37:21.288] [DEBUG] [Move 26] VALIDATION DEBUG: Legal move 2: move (1,0) -> (1,1)
+[19:37:21.288] [DEBUG] [Move 26] VALIDATION DEBUG: Legal move 3: move (1,0) -> (2,0)
+[19:37:21.288] [DEBUG] [Move 26] VALIDATION DEBUG: Legal move 4: flip (1,0) -> (1,0)
+[19:37:21.288] [DEBUG] [Move 26] VALIDATION DEBUG: Legal move 5: flip (1,0) -> (1,0)
+[19:37:21.288] [DEBUG] [Move 26] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:21.288] [DECISION] [Move 26] FINAL DECISION: move (6,4) -> (6,11) | Reasoning: Minimax search
+[19:37:21.288] [DECISION] [Move 26] === MOVE DECISION END ===
+[19:37:21.324] [DECISION] [Move 27] === MOVE DECISION START === Player: square, Board: 13x12, Time: 0.668805s (vs 59.9126s)
+[19:37:21.425] [DEBUG] [Move 27] VALIDATION DEBUG: Generated 103 legal moves for validation
+[19:37:21.426] [DEBUG] [Move 27] VALIDATION DEBUG: Minimax returned move: move (1,0) -> (0,0)
+[19:37:21.426] [DEBUG] [Move 27] VALIDATION DEBUG: Legal move 1: move (1,0) -> (0,0)
+[19:37:21.426] [DEBUG] [Move 27] VALIDATION DEBUG: Legal move 2: move (1,0) -> (1,1)
+[19:37:21.426] [DEBUG] [Move 27] VALIDATION DEBUG: Legal move 3: move (1,0) -> (2,0)
+[19:37:21.426] [DEBUG] [Move 27] VALIDATION DEBUG: Legal move 4: flip (1,0) -> (1,0)
+[19:37:21.426] [DEBUG] [Move 27] VALIDATION DEBUG: Legal move 5: flip (1,0) -> (1,0)
+[19:37:21.426] [DEBUG] [Move 27] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:21.426] [DECISION] [Move 27] FINAL DECISION: move (1,0) -> (0,0) | Reasoning: Minimax search
+[19:37:21.426] [DECISION] [Move 27] === MOVE DECISION END ===
+[19:37:21.463] [DECISION] [Move 28] === MOVE DECISION START === Player: square, Board: 13x12, Time: 0.5673s (vs 59.9105s)
+[19:37:21.564] [DEBUG] [Move 28] VALIDATION DEBUG: Generated 102 legal moves for validation
+[19:37:21.564] [DEBUG] [Move 28] VALIDATION DEBUG: Minimax returned move: move (8,4) -> (7,5)
+[19:37:21.564] [DEBUG] [Move 28] VALIDATION DEBUG: Legal move 1: move (0,0) -> (0,1)
+[19:37:21.564] [DEBUG] [Move 28] VALIDATION DEBUG: Legal move 2: move (0,0) -> (1,0)
+[19:37:21.564] [DEBUG] [Move 28] VALIDATION DEBUG: Legal move 3: flip (0,0) -> (0,0)
+[19:37:21.564] [DEBUG] [Move 28] VALIDATION DEBUG: Legal move 4: flip (0,0) -> (0,0)
+[19:37:21.564] [DEBUG] [Move 28] VALIDATION DEBUG: Legal move 5: move (0,3) -> (0,2)
+[19:37:21.564] [DEBUG] [Move 28] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:21.564] [DECISION] [Move 28] FINAL DECISION: move (8,4) -> (7,5) | Reasoning: Minimax search
+[19:37:21.564] [DECISION] [Move 28] === MOVE DECISION END ===
+[19:37:21.600] [DECISION] [Move 29] === MOVE DECISION START === Player: square, Board: 13x12, Time: 0.465908s (vs 59.908s)
+[19:37:21.702] [DEBUG] [Move 29] VALIDATION DEBUG: Generated 90 legal moves for validation
+[19:37:21.702] [DEBUG] [Move 29] VALIDATION DEBUG: Minimax returned move: move (4,4) -> (3,3)
+[19:37:21.702] [DEBUG] [Move 29] VALIDATION DEBUG: Legal move 1: move (0,0) -> (0,1)
+[19:37:21.702] [DEBUG] [Move 29] VALIDATION DEBUG: Legal move 2: move (0,0) -> (1,0)
+[19:37:21.702] [DEBUG] [Move 29] VALIDATION DEBUG: Legal move 3: flip (0,0) -> (0,0)
+[19:37:21.702] [DEBUG] [Move 29] VALIDATION DEBUG: Legal move 4: flip (0,0) -> (0,0)
+[19:37:21.702] [DEBUG] [Move 29] VALIDATION DEBUG: Legal move 5: move (0,3) -> (0,2)
+[19:37:21.702] [DEBUG] [Move 29] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:21.702] [DECISION] [Move 29] FINAL DECISION: move (4,4) -> (3,3) | Reasoning: Minimax search
+[19:37:21.702] [DECISION] [Move 29] === MOVE DECISION END ===
+[19:37:21.739] [DECISION] [Move 30] === MOVE DECISION START === Player: square, Board: 13x12, Time: 0.363818s (vs 59.9051s)
+[19:37:21.840] [DEBUG] [Move 30] VALIDATION DEBUG: Generated 87 legal moves for validation
+[19:37:21.840] [DEBUG] [Move 30] VALIDATION DEBUG: Minimax returned move: move (7,5) -> (11,8)
+[19:37:21.840] [DEBUG] [Move 30] VALIDATION DEBUG: Legal move 1: move (0,0) -> (0,1)
+[19:37:21.840] [DEBUG] [Move 30] VALIDATION DEBUG: Legal move 2: move (0,0) -> (1,0)
+[19:37:21.840] [DEBUG] [Move 30] VALIDATION DEBUG: Legal move 3: flip (0,0) -> (0,0)
+[19:37:21.840] [DEBUG] [Move 30] VALIDATION DEBUG: Legal move 4: flip (0,0) -> (0,0)
+[19:37:21.840] [DEBUG] [Move 30] VALIDATION DEBUG: Legal move 5: move (0,3) -> (0,2)
+[19:37:21.840] [DEBUG] [Move 30] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:21.840] [DECISION] [Move 30] FINAL DECISION: move (7,5) -> (11,8) | Reasoning: Minimax search
+[19:37:21.840] [DECISION] [Move 30] === MOVE DECISION END ===
+[19:37:21.876] [DECISION] [Move 31] === MOVE DECISION START === Player: square, Board: 13x12, Time: 0.262297s (vs 59.9025s)
+[19:37:21.978] [DEBUG] [Move 31] VALIDATION DEBUG: Generated 69 legal moves for validation
+[19:37:21.978] [DEBUG] [Move 31] VALIDATION DEBUG: Minimax returned move: move (7,4) -> (7,3)
+[19:37:21.978] [DEBUG] [Move 31] VALIDATION DEBUG: Legal move 1: move (0,0) -> (0,1)
+[19:37:21.978] [DEBUG] [Move 31] VALIDATION DEBUG: Legal move 2: move (0,0) -> (1,0)
+[19:37:21.978] [DEBUG] [Move 31] VALIDATION DEBUG: Legal move 3: flip (0,0) -> (0,0)
+[19:37:21.978] [DEBUG] [Move 31] VALIDATION DEBUG: Legal move 4: flip (0,0) -> (0,0)
+[19:37:21.978] [DEBUG] [Move 31] VALIDATION DEBUG: Legal move 5: move (0,3) -> (0,2)
+[19:37:21.978] [DEBUG] [Move 31] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:21.978] [DECISION] [Move 31] FINAL DECISION: move (7,4) -> (7,3) | Reasoning: Minimax search
+[19:37:21.978] [DECISION] [Move 31] === MOVE DECISION END ===
+[19:37:22.015] [DECISION] [Move 32] === MOVE DECISION START === Player: square, Board: 13x12, Time: 0.160475s (vs 59.8986s)
+[19:37:22.117] [DEBUG] [Move 32] VALIDATION DEBUG: Generated 77 legal moves for validation
+[19:37:22.117] [DEBUG] [Move 32] VALIDATION DEBUG: Minimax returned move: rotate (4,3) -> (4,3)
+[19:37:22.117] [DEBUG] [Move 32] VALIDATION DEBUG: Legal move 1: move (0,0) -> (0,1)
+[19:37:22.117] [DEBUG] [Move 32] VALIDATION DEBUG: Legal move 2: move (0,0) -> (1,0)
+[19:37:22.117] [DEBUG] [Move 32] VALIDATION DEBUG: Legal move 3: flip (0,0) -> (0,0)
+[19:37:22.117] [DEBUG] [Move 32] VALIDATION DEBUG: Legal move 4: flip (0,0) -> (0,0)
+[19:37:22.117] [DEBUG] [Move 32] VALIDATION DEBUG: Legal move 5: move (0,3) -> (0,2)
+[19:37:22.117] [DEBUG] [Move 32] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:22.117] [DECISION] [Move 32] FINAL DECISION: rotate (4,3) -> (4,3) | Reasoning: Minimax search
+[19:37:22.117] [DECISION] [Move 32] === MOVE DECISION END ===
+[19:37:22.154] [DECISION] [Move 33] === MOVE DECISION START === Player: square, Board: 13x12, Time: 0.0582318s (vs 59.8956s)
+[19:37:22.196] [DEBUG] [Move 33] VALIDATION DEBUG: Generated 89 legal moves for validation
+[19:37:22.196] [DEBUG] [Move 33] VALIDATION DEBUG: Minimax returned move: move (6,3) -> (7,6)
+[19:37:22.196] [DEBUG] [Move 33] VALIDATION DEBUG: Legal move 1: move (0,0) -> (0,1)
+[19:37:22.196] [DEBUG] [Move 33] VALIDATION DEBUG: Legal move 2: move (0,0) -> (1,0)
+[19:37:22.196] [DEBUG] [Move 33] VALIDATION DEBUG: Legal move 3: flip (0,0) -> (0,0)
+[19:37:22.196] [DEBUG] [Move 33] VALIDATION DEBUG: Legal move 4: flip (0,0) -> (0,0)
+[19:37:22.196] [DEBUG] [Move 33] VALIDATION DEBUG: Legal move 5: move (0,3) -> (0,2)
+[19:37:22.196] [DEBUG] [Move 33] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:22.196] [DECISION] [Move 33] FINAL DECISION: move (6,3) -> (7,6) | Reasoning: Minimax search
+[19:37:22.196] [DECISION] [Move 33] === MOVE DECISION END ===
+[19:37:22.234] [DECISION] [Move 34] === MOVE DECISION START === Player: square, Board: 13x12, Time: 0.0158508s (vs 59.893s)
+[19:37:22.247] [DEBUG] [Move 34] VALIDATION DEBUG: Generated 82 legal moves for validation
+[19:37:22.248] [DEBUG] [Move 34] VALIDATION DEBUG: Minimax returned move: flip (0,0) -> (0,0)
+[19:37:22.248] [DEBUG] [Move 34] VALIDATION DEBUG: Legal move 1: move (0,0) -> (0,1)
+[19:37:22.248] [DEBUG] [Move 34] VALIDATION DEBUG: Legal move 2: move (0,0) -> (1,0)
+[19:37:22.248] [DEBUG] [Move 34] VALIDATION DEBUG: Legal move 3: flip (0,0) -> (0,0)
+[19:37:22.248] [DEBUG] [Move 34] VALIDATION DEBUG: Legal move 4: flip (0,0) -> (0,0)
+[19:37:22.248] [DEBUG] [Move 34] VALIDATION DEBUG: Legal move 5: move (0,3) -> (0,2)
+[19:37:22.248] [DEBUG] [Move 34] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:22.248] [DECISION] [Move 34] FINAL DECISION: flip (0,0) -> (0,0) [horizontal] | Reasoning: Minimax search
+[19:37:22.248] [DECISION] [Move 34] === MOVE DECISION END ===
+[19:37:22.302] [DECISION] [Move 35] === MOVE DECISION START === Player: square, Board: 13x12, Time: 0.00136018s (vs 59.8879s)
+[19:37:22.304] [DEBUG] [Move 35] VALIDATION DEBUG: Generated 82 legal moves for validation
+[19:37:22.304] [DEBUG] [Move 35] VALIDATION DEBUG: Minimax returned move: move (0,0) -> (0,1)
+[19:37:22.304] [DEBUG] [Move 35] VALIDATION DEBUG: Legal move 1: move (0,0) -> (0,1)
+[19:37:22.304] [DEBUG] [Move 35] VALIDATION DEBUG: Legal move 2: move (0,0) -> (1,0)
+[19:37:22.304] [DEBUG] [Move 35] VALIDATION DEBUG: Legal move 3: flip (0,0) -> (0,0)
+[19:37:22.304] [DEBUG] [Move 35] VALIDATION DEBUG: Legal move 4: rotate (0,0) -> (0,0)
+[19:37:22.304] [DEBUG] [Move 35] VALIDATION DEBUG: Legal move 5: move (0,3) -> (0,2)
+[19:37:22.304] [DEBUG] [Move 35] VALIDATION DEBUG: Move found in legal moves - SUCCESS!
+[19:37:22.304] [DECISION] [Move 35] FINAL DECISION: move (0,0) -> (0,1) | Reasoning: Minimax search
+[19:37:22.304] [DECISION] [Move 35] === MOVE DECISION END ===

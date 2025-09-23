@@ -45,7 +45,7 @@ private:
     bool logging_enabled;
     
 public:
-    AILogger() : min_log_level(LogLevel::INFO), move_number(0), logging_enabled(true) {
+    AILogger() : min_log_level(LogLevel::DEBUG), move_number(0), logging_enabled(true) {
         initializeLogging();
     }
     
@@ -58,9 +58,32 @@ public:
     void initializeLogging() {
         if (!logging_enabled) return;
         
-        // Create logs directory if it doesn't exist
-        log_directory = "logs";
-        std::filesystem::create_directories(log_directory);
+        // Create logs directory relative to current working directory
+        // Try multiple possible locations for logs
+        std::vector<std::string> possible_log_dirs = {
+            "logs",                                    // Current directory
+            "../c++_sample_files/logs",               // From client_server to c++ dir
+            "./c++_sample_files/logs"                 // Alternative path
+        };
+        
+        log_directory = "";
+        for (const auto& dir : possible_log_dirs) {
+            try {
+                std::filesystem::create_directories(dir);
+                if (std::filesystem::exists(dir)) {
+                    log_directory = dir;
+                    break;
+                }
+            } catch (...) {
+                continue; // Try next directory
+            }
+        }
+        
+        // Fallback to current directory if none worked
+        if (log_directory.empty()) {
+            log_directory = "logs";
+            std::filesystem::create_directories(log_directory);
+        }
         
         // Generate unique game session ID
         auto now = std::chrono::system_clock::now();
@@ -1105,361 +1128,13 @@ public:
             }
         }
         
-        // Apply move ordering if enabled
-        if (enable_move_ordering && move_buffer.size() > 1) {
-            orderMovesForSearch(move_buffer, board, player, rows, cols, score_cols, tt_best_move);
-        }
-        
-        // Log move generation details
-        logMoveGeneration(board, player);
-        
         return move_buffer;
     }
     
-    // ==================== PHASE 5B: MOVE ORDERING FOR SEARCH ====================
     
-    // Order moves for optimal alpha-beta pruning
-    void orderMovesForSearch(std::vector<Move>& moves,
-                           const std::vector<std::vector<std::map<std::string, std::string>>>& board,
-                           const std::string& player,
-                           int rows, int cols,
-                           const std::vector<int>& score_cols,
-                           const Move& tt_best_move) const {
-        
-        // Sort moves by search priority (higher scores first)
-        std::sort(moves.begin(), moves.end(), 
-                 [this, &board, &player, rows, cols, &score_cols, &tt_best_move]
-                 (const Move& a, const Move& b) {
-                     return getMoveSearchScore(a, board, player, rows, cols, score_cols, tt_best_move) >
-                            getMoveSearchScore(b, board, player, rows, cols, score_cols, tt_best_move);
-                 });
-    }
-    
-    // Assign search priority score to move for ordering
-    int getMoveSearchScore(const Move& move,
-                          const std::vector<std::vector<std::map<std::string, std::string>>>& board,
-                          const std::string& player,
-                          int rows, int cols,
-                          const std::vector<int>& score_cols,
-                          const Move& tt_best_move) const {
-        
-        int score = 0;
-        
-        // Highest priority: Transposition table best move
-        if (move == tt_best_move) {
-            score += 10000;
-        }
-        
-        int from_x = move.from[0], from_y = move.from[1];
-        int to_x = move.to[0], to_y = move.to[1];
-        
-        // High priority: Captures (moving to opponent territory)
-        if (to_y < rows && to_x < cols && to_x >= 0 && to_y >= 0) {
-            const auto& target_cell = board[to_y][to_x];
-            if (!target_cell.empty()) {
-                std::string target_owner = getOwnerFromCell(target_cell);
-                if (target_owner != player) {
-                    score += 5000;  // Capture bonus
-                    
-                    // Prioritize capturing stronger pieces
-                    std::string piece_side = getSideFromCell(target_cell);
-                    if (piece_side == "stone") {
-                        score += 1000;  // Stone captures are valuable
-                    } else {
-                        score += 800;   // River captures
-                    }
-                }
-            }
-        }
-        
-        // Medium priority: Moves toward scoring columns
-        bool moves_toward_score_col = false;
-        for (int col : score_cols) {
-            if (std::abs(to_x - col) < std::abs(from_x - col)) {
-                score += 2000;
-                moves_toward_score_col = true;
-                break;
-            }
-        }
-        
-        // Medium priority: Central board control
-        int center_x = cols / 2;
-        int center_y = rows / 2;
-        int distance_to_center = std::abs(to_x - center_x) + std::abs(to_y - center_y);
-        score += (20 - distance_to_center) * 50;  // Closer to center = better
-        
-        // Low priority: Piece mobility (prefer moves that maintain mobility)
-        if (from_y < rows && from_x < cols && from_x >= 0 && from_y >= 0) {
-            const auto& from_cell = board[from_y][from_x];
-            std::string piece_side = getSideFromCell(from_cell);
-            
-            if (piece_side == "river") {
-                score += 300;  // Rivers are more mobile
-                
-                // Check if move creates flow opportunities
-                std::string orientation = getRiverOrientationFromCell(from_cell);
-                if (orientation == "horizontal" && to_x != from_x) {
-                    score += 200;  // Horizontal river moving horizontally
-                }
-                if (orientation == "vertical" && to_y != from_y) {
-                    score += 200;  // Vertical river moving vertically
-                }
-            } else {
-                score += 100;  // Stones are less mobile but stable
-            }
-        }
-        
-        // Penalty: Moving away from scoring columns
-        if (!moves_toward_score_col) {
-            for (int col : score_cols) {
-                if (std::abs(to_x - col) > std::abs(from_x - col)) {
-                    score -= 500;  // Moving away from scoring
-                    break;
-                }
-            }
-        }
-        
-        return score;
-    }
-    
-private:
-    // Log move generation statistics
-    void logMoveGeneration(const std::vector<std::vector<std::map<std::string, std::string>>>& board,
-                          const std::string& player) const {
-        
-        int capture_moves = 0, quiet_moves = 0, aggressive_moves = 0;
-        std::string best_move_desc = "none";
-        float best_score = -10000.0f;
-        
-        // Analyze generated moves
-        for (size_t i = 0; i < move_buffer.size(); ++i) {
-            const auto& move = move_buffer[i];
-            
-            // Categorize move
-            bool is_capture = false;
-            bool is_aggressive = false;
-            
-            // Check if move captures opponent piece
-            if (!move.to.empty() && move.to[0] >= 0 && move.to[1] >= 0 && 
-                move.to[1] < board.size() && move.to[0] < board[0].size()) {
-                const auto& target_cell = board[move.to[1]][move.to[0]];
-                if (!target_cell.empty()) {
-                    std::string target_owner = getOwnerFromCell(target_cell);
-                    if (target_owner != player) {
-                        is_capture = true;
-                        capture_moves++;
-                    }
-                }
-            }
-            
-            // Check if move is aggressive (moving toward opponent)
-            if (move.action == "move" && !move.from.empty() && !move.to.empty()) {
-                int from_y = move.from[1];
-                int to_y = move.to[1];
-                bool is_circle = (player == "circle");
-                
-                if (is_circle && to_y < from_y) is_aggressive = true;  // Circle moving up
-                if (!is_circle && to_y > from_y) is_aggressive = true; // Square moving down
-            }
-            
-            if (is_aggressive) aggressive_moves++;
-            if (!is_capture && !is_aggressive) quiet_moves++;
-            
-            // Track best move (first move has highest priority after ordering)
-            if (i == 0) {
-                best_move_desc = g_logger.moveToString(move);
-                best_score = 1000.0f; // Placeholder score
-            }
-        }
-        
-        // Log to CSV
-        g_logger.logMoveGeneration(
-            move_buffer.size(),     // total moves
-            move_buffer.size(),     // ordered moves (all moves are ordered)
-            capture_moves,          // capture moves
-            quiet_moves,           // quiet moves  
-            aggressive_moves,       // aggressive moves
-            best_move_desc,        // best move description
-            best_score             // best move score
-        );
-        
-        // Log detailed information
-        std::stringstream details;
-        details << "Generated " << move_buffer.size() << " moves ("
-                << capture_moves << " captures, "
-                << quiet_moves << " quiet, "
-                << aggressive_moves << " aggressive) for " << player;
-        g_logger.log(LogLevel::INFO, details.str());
-        
-        if (!move_buffer.empty()) {
-            g_logger.log(LogLevel::DEBUG, "Top move: " + best_move_desc);
-        }
-    }
-
 public:
-    
-    // ==================== PHASE 3: MOVE CATEGORIZATION ====================
-    
-    // Generate high-priority capture/scoring moves
-    const std::vector<Move>& generateCaptureMoves(
-        const std::vector<std::vector<std::map<std::string, std::string>>>& board,
-        const std::string& player,
-        int rows, int cols, 
-        const std::vector<int>& score_cols) {
-        
-        move_buffer.clear();
-        
-        for (int y = 0; y < rows; ++y) {
-            for (int x = 0; x < cols; ++x) {
-                const auto& cell = board[y][x];
-                if (cell.empty() || getOwnerFromCell(cell) != player) continue;
-                
-                // Only generate moves that advance toward opponent scoring area
-                generateCapturingMovesForPiece(board, x, y, player, rows, cols, score_cols);
-            }
-        }
-        
-        return move_buffer;
-    }
-    
-    // Generate quiet positional moves (no immediate threats)
-    const std::vector<Move>& generateQuietMoves(
-        const std::vector<std::vector<std::map<std::string, std::string>>>& board,
-        const std::string& player,
-        int rows, int cols, 
-        const std::vector<int>& score_cols) {
-        
-        move_buffer.clear();
-        
-        for (int y = 0; y < rows; ++y) {
-            for (int x = 0; x < cols; ++x) {
-                const auto& cell = board[y][x];
-                if (cell.empty() || getOwnerFromCell(cell) != player) continue;
-                
-                // Generate non-aggressive moves
-                generateQuietMovesForPiece(board, x, y, player, rows, cols, score_cols);
-            }
-        }
-        
-        return move_buffer;
-    }
-    
-    // Generate aggressive moves (pushes, blocks opponent advancement)
-    const std::vector<Move>& generateAggressiveMoves(
-        const std::vector<std::vector<std::map<std::string, std::string>>>& board,
-        const std::string& player,
-        int rows, int cols, 
-        const std::vector<int>& score_cols) {
-        
-        move_buffer.clear();
-        
-        for (int y = 0; y < rows; ++y) {
-            for (int x = 0; x < cols; ++x) {
-                const auto& cell = board[y][x];
-                if (cell.empty() || getOwnerFromCell(cell) != player) continue;
-                
-                // Generate push moves and defensive blocks
-                generateAggressiveMovesForPiece(board, x, y, player, rows, cols, score_cols);
-            }
-        }
-        
-        return move_buffer;
-    }
-    
+
     // ==================== PHASE 3: MOVE ORDERING SYSTEM ====================
-    
-    // Generate ordered moves for alpha-beta optimization
-    const std::vector<Move>& generateOrderedMoves(
-        const std::vector<std::vector<std::map<std::string, std::string>>>& board,
-        const std::string& player,
-        int rows, int cols, 
-        const std::vector<int>& score_cols) {
-        
-        // Generate all moves first
-        generateAllMoves(board, player, rows, cols, score_cols);
-        
-        // Sort moves by priority for alpha-beta pruning
-        std::sort(move_buffer.begin(), move_buffer.end(), 
-                 [this, &board, &player, rows, cols, &score_cols](const Move& a, const Move& b) {
-                     return scoreMoveForOrdering(a, board, player, rows, cols, score_cols) >
-                            scoreMoveForOrdering(b, board, player, rows, cols, score_cols);
-                 });
-        
-        return move_buffer;
-    }
-    
-    // Score a move for ordering purposes (higher = better for alpha-beta)
-    int scoreMoveForOrdering(const Move& move,
-                           const std::vector<std::vector<std::map<std::string, std::string>>>& board,
-                           const std::string& player,
-                           int rows, int cols,
-                           const std::vector<int>& score_cols) const {
-        
-        int score = 0;
-        int from_x = move.from[0], from_y = move.from[1];
-        int to_x = move.to[0], to_y = move.to[1];
-        
-        int opponent_score_row = (player == "circle") ? (rows - 3) : 2;
-        int player_score_row = (player == "circle") ? 2 : (rows - 3);
-        
-        // Priority 1: Moves that reach scoring area (highest priority)
-        if (to_y == opponent_score_row && 
-            std::find(score_cols.begin(), score_cols.end(), to_x) != score_cols.end()) {
-            score += 10000;  // Immediate scoring move
-        }
-        
-        // Priority 2: Push moves (aggressive, often good in alpha-beta)
-        if (move.action == "push") {
-            score += 5000;
-            
-            // Extra points for pushing opponent away from our scoring area
-            if (!move.pushed_to.empty()) {
-                int pushed_distance = std::abs(move.pushed_to[1] - player_score_row);
-                score += pushed_distance * 100;  // Further away = better
-            }
-        }
-        
-        // Priority 3: Moves that advance toward opponent scoring area
-        if (move.action == "move") {
-            int old_distance = std::abs(from_y - opponent_score_row);
-            int new_distance = std::abs(to_y - opponent_score_row);
-            int advancement = old_distance - new_distance;
-            score += advancement * 1000;  // Closer to scoring = better
-            
-            // Bonus for moves in scoring columns
-            if (std::find(score_cols.begin(), score_cols.end(), to_x) != score_cols.end()) {
-                score += 2000;
-            }
-        }
-        
-        // Priority 4: Flip moves that create strategic rivers
-        if (move.action == "flip" && move.from == move.to) {
-            const auto& piece = board[from_y][from_x];
-            if (isStonePiece(piece)) {
-                // Stone -> River: strategic positioning
-                score += 800;
-                
-                // Bonus for flips near opponent scoring area
-                int distance_to_opp_score = std::abs(from_y - opponent_score_row);
-                score += (10 - distance_to_opp_score) * 100;
-            } else {
-                // River -> Stone: consolidation move
-                score += 400;
-            }
-        }
-        
-        // Priority 5: Rotate moves (tactical adjustments)
-        if (move.action == "rotate") {
-            score += 300;
-        }
-        
-        // Priority 6: Central board control (tie-breaker)
-        int center_x = cols / 2, center_y = rows / 2;
-        int centrality = 10 - (std::abs(to_x - center_x) + std::abs(to_y - center_y));
-        score += centrality * 10;
-        
-        return score;
-    }
     
     // Generate all moves for a single piece (mirrors sample.cpp logic)
     void generateMovesForPiece(
@@ -1638,107 +1313,7 @@ public:
         
         return true; // Safe rotation
     }
-    
-    // ==================== PHASE 3: SPECIALIZED MOVE GENERATORS ====================
-    
-    // Generate moves that advance toward opponent scoring area
-    void generateCapturingMovesForPiece(
-        const std::vector<std::vector<std::map<std::string, std::string>>>& board,
-        int x, int y, const std::string& player,
-        int rows, int cols, const std::vector<int>& score_cols) {
-        
-        const auto& cell = board[y][x];
-        auto targets = computeValidTargets(board, x, y, player, rows, cols, score_cols);
-        
-        // Determine opponent scoring area
-        int opponent_score_row = (player == "circle") ? (rows - 3) : 2;  // bottom for circle, top for square
-        
-        // Add moves that get closer to opponent scoring area
-        for (const auto& move_pos : targets.moves) {
-            int distance_improvement = std::abs(y - opponent_score_row) - std::abs(move_pos.second - opponent_score_row);
-            if (distance_improvement > 0) {  // Gets closer to scoring area
-                move_buffer.emplace_back("move", std::vector<int>{x, y}, 
-                                       std::vector<int>{move_pos.first, move_pos.second});
-            }
-        }
-        
-        // Add all push moves (aggressive by nature)
-        for (const auto& push_pair : targets.pushes) {
-            const auto& own_final = push_pair.first;
-            const auto& pushed_to = push_pair.second;
-            move_buffer.emplace_back("push", std::vector<int>{x, y},
-                                   std::vector<int>{own_final.first, own_final.second},
-                                   std::vector<int>{pushed_to.first, pushed_to.second});
-        }
-    }
-    
-    // Generate non-threatening positional moves
-    void generateQuietMovesForPiece(
-        const std::vector<std::vector<std::map<std::string, std::string>>>& board,
-        int x, int y, const std::string& player,
-        int rows, int cols, const std::vector<int>& score_cols) {
-        
-        const auto& cell = board[y][x];
-        auto targets = computeValidTargets(board, x, y, player, rows, cols, score_cols);
-        
-        int opponent_score_row = (player == "circle") ? (rows - 3) : 2;
-        
-        // Add moves that don't change distance significantly or move away from scoring
-        for (const auto& move_pos : targets.moves) {
-            int distance_change = std::abs(move_pos.second - opponent_score_row) - std::abs(y - opponent_score_row);
-            if (distance_change >= 0) {  // Doesn't get closer (quiet move)
-                move_buffer.emplace_back("move", std::vector<int>{x, y}, 
-                                       std::vector<int>{move_pos.first, move_pos.second});
-            }
-        }
-        
-        // Add safe flip moves (positional improvement)
-        if (isStonePiece(cell)) {
-            for (const std::string& orientation : {"horizontal", "vertical"}) {
-                if (isFlipSafe(board, x, y, player, rows, cols, score_cols, orientation)) {
-                    move_buffer.emplace_back("flip", std::vector<int>{x, y}, 
-                                           std::vector<int>{x, y}, std::vector<int>{}, orientation);
-                }
-            }
-        }
-        
-        // Add safe rotate moves
-        if (isRiverPiece(cell)) {
-            std::string current_orientation = getRiverOrientationFromCell(cell);
-            std::string new_orientation = (current_orientation == "horizontal") ? "vertical" : "horizontal";
-            
-            if (isRotateSafe(board, x, y, player, rows, cols, score_cols, new_orientation)) {
-                move_buffer.emplace_back("rotate", std::vector<int>{x, y}, 
-                                       std::vector<int>{x, y}, std::vector<int>{}, "");
-            }
-        }
-    }
-    
-    // Generate aggressive/defensive moves
-    void generateAggressiveMovesForPiece(
-        const std::vector<std::vector<std::map<std::string, std::string>>>& board,
-        int x, int y, const std::string& player,
-        int rows, int cols, const std::vector<int>& score_cols) {
-        
-        auto targets = computeValidTargets(board, x, y, player, rows, cols, score_cols);
-        
-        // Add all push moves (inherently aggressive)
-        for (const auto& push_pair : targets.pushes) {
-            const auto& own_final = push_pair.first;
-            const auto& pushed_to = push_pair.second;
-            move_buffer.emplace_back("push", std::vector<int>{x, y},
-                                   std::vector<int>{own_final.first, own_final.second},
-                                   std::vector<int>{pushed_to.first, pushed_to.second});
-        }
-        
-        // Add moves that block opponent pieces from advancing
-        for (const auto& move_pos : targets.moves) {
-            if (isBlockingMove(board, x, y, move_pos.first, move_pos.second, player, rows, cols, score_cols)) {
-                move_buffer.emplace_back("move", std::vector<int>{x, y}, 
-                                       std::vector<int>{move_pos.first, move_pos.second});
-            }
-        }
-    }
+
     
     // Check if a move blocks opponent advancement
     bool isBlockingMove(const std::vector<std::vector<std::map<std::string, std::string>>>& board,
@@ -1766,123 +1341,6 @@ public:
         return false;
     }
     
-    // ==================== PHASE 3: GAMESTATE INTEGRATION ====================
-    
-    // Generate moves using GameState for enhanced validation
-    const std::vector<Move>& generateMovesWithGameState(
-        GameState& gameState, const std::string& player) {
-        
-        move_buffer.clear();
-        
-        int rows = gameState.getRows();
-        int cols = gameState.getCols();
-        const auto& score_cols = gameState.getScoreCols();
-        
-        bool isCirclePlayer = (player == "circle");
-        
-        // Iterate through all positions
-        for (int y = 0; y < rows; ++y) {
-            for (int x = 0; x < cols; ++x) {
-                if (gameState.isEmpty(x, y)) continue;
-                
-                // Check piece ownership using GameState utilities
-                if (!gameState.isPlayerPiece(x, y, isCirclePlayer)) continue;
-                
-                // Generate moves using GameState validation
-                generateMovesForPieceWithGameState(gameState, x, y, player);
-            }
-        }
-        
-        return move_buffer;
-    }
-    
-    // Generate moves for a piece using GameState methods
-    void generateMovesForPieceWithGameState(GameState& gameState, int x, int y, const std::string& player) {
-        bool isCirclePlayer = (player == "circle");
-        
-        // Generate movement moves
-        for (auto [dx, dy] : DIRECTIONS) {
-            int tx = x + dx, ty = y + dy;
-            
-            if (!gameState.inBounds(tx, ty)) continue;
-            
-            // Block moves into opponent scoring area
-            if (gameState.isOpponentScoreCell(tx, ty, isCirclePlayer)) continue;
-            
-            if (gameState.isEmpty(tx, ty)) {
-                // Simple move
-                move_buffer.emplace_back("move", std::vector<int>{x, y}, std::vector<int>{tx, ty});
-            } else if (!gameState.isPlayerPiece(tx, ty, isCirclePlayer)) {
-                // Potential push move
-                int px = tx + dx, py = ty + dy;
-                if (gameState.inBounds(px, py) && gameState.isEmpty(px, py) &&
-                    !gameState.isOpponentScoreCell(px, py, isCirclePlayer)) {
-                    move_buffer.emplace_back("push", std::vector<int>{x, y}, 
-                                           std::vector<int>{tx, ty}, std::vector<int>{px, py});
-                }
-            }
-        }
-        
-        // Generate flip moves
-        std::string piece_type = gameState.getPieceType(x, y);
-        if (piece_type == "stone") {
-            // Stone -> River flips (with safety checks)
-            for (const std::string& orientation : {"horizontal", "vertical"}) {
-                if (isFlipSafeWithGameState(gameState, x, y, player, orientation)) {
-                    move_buffer.emplace_back("flip", std::vector<int>{x, y}, 
-                                           std::vector<int>{x, y}, std::vector<int>{}, orientation);
-                }
-            }
-        } else if (piece_type == "river") {
-            // River -> Stone (always safe)
-            move_buffer.emplace_back("flip", std::vector<int>{x, y}, 
-                                   std::vector<int>{x, y}, std::vector<int>{}, "");
-        }
-        
-        // Generate rotate moves (only for rivers)
-        if (piece_type == "river") {
-            std::string current_orientation = gameState.getRiverOrientation(x, y);
-            if (isRotateSafeWithGameState(gameState, x, y, player)) {
-                move_buffer.emplace_back("rotate", std::vector<int>{x, y}, 
-                                       std::vector<int>{x, y}, std::vector<int>{}, "");
-            }
-        }
-    }
-    
-    // Enhanced flip safety check using GameState
-    bool isFlipSafeWithGameState(GameState& gameState, int fx, int fy, 
-                                const std::string& player, const std::string& orientation) const {
-        
-        std::string piece_type = gameState.getPieceType(fx, fy);
-        if (piece_type != "stone") {
-            return true; // River -> stone is always safe
-        }
-        
-        bool isCirclePlayer = (player == "circle");
-        int opponent_score_row = isCirclePlayer ? (gameState.getRows() - 3) : 2;
-        int distance_to_opponent_score = std::abs(fy - opponent_score_row);
-        
-        // Conservative safety: don't flip too close to opponent scoring area
-        // This prevents accidental river flows into opponent scoring areas
-        return distance_to_opponent_score >= 2;
-    }
-    
-    // Enhanced rotate safety check using GameState
-    bool isRotateSafeWithGameState(GameState& gameState, int rx, int ry,
-                                  const std::string& player) const {
-        
-        std::string piece_type = gameState.getPieceType(rx, ry);
-        if (piece_type != "river") {
-            return false;
-        }
-        
-        bool isCirclePlayer = (player == "circle");
-        int opponent_score_row = isCirclePlayer ? (gameState.getRows() - 3) : 2;
-        int distance_to_opponent_score = std::abs(ry - opponent_score_row);
-        
-        // Conservative safety: don't rotate too close to opponent scoring area
-        return distance_to_opponent_score >= 2;
-    }
 };
 
 // Static member definition
@@ -1955,253 +1413,185 @@ private:
     }
 };
 
-// ==================== PHASE 5A: TRANSPOSITION TABLE ====================
-struct TTEntry {
-    uint64_t hash = 0;              // Position hash for verification
-    float score = 0.0f;             // Evaluated score
-    int depth = -1;                 // Search depth of this entry
-    enum Flag { EXACT, LOWER_BOUND, UPPER_BOUND } flag = EXACT;
-    Move best_move;                 // Best move from this position
-    bool is_valid = false;          // Entry validity flag
-    
-    TTEntry() = default;
-    TTEntry(uint64_t h, float s, int d, Flag f, const Move& move)
-        : hash(h), score(s), depth(d), flag(f), best_move(move), is_valid(true) {}
-};
-
-class TranspositionTable {
-private:
-    std::unordered_map<uint64_t, TTEntry> table;
-    size_t max_size;                // Memory limit for table (number of entries)
-    mutable size_t hits, misses;    // Performance statistics
-    
-public:
-    TranspositionTable(size_t max_entries = 1000000) // Default ~64MB
-        : max_size(max_entries), hits(0), misses(0) {
-        table.reserve(max_entries / 2);  // Reserve space for efficiency
-    }
-    
-    // Probe table for existing evaluation
-    bool probe(uint64_t hash, int depth, float alpha, float beta, 
-               float& score, Move& best_move) const {
-        auto it = table.find(hash);
-        if (it == table.end() || !it->second.is_valid) {
-            misses++;
-            return false;
-        }
-        
-        const TTEntry& entry = it->second;
-        
-        // Hash collision check
-        if (entry.hash != hash) {
-            misses++;
-            return false;
-        }
-        
-        // Store best move regardless of depth (for move ordering)
-        best_move = entry.best_move;
-        
-        // Only use score if search depth is sufficient
-        if (entry.depth >= depth) {
-            hits++;
-            
-            switch (entry.flag) {
-                case TTEntry::EXACT:
-                    score = entry.score;
-                    return true;
-                case TTEntry::LOWER_BOUND:
-                    if (entry.score >= beta) {
-                        score = entry.score;
-                        return true;
-                    }
-                    break;
-                case TTEntry::UPPER_BOUND:
-                    if (entry.score <= alpha) {
-                        score = entry.score;
-                        return true;
-                    }
-                    break;
-            }
-        }
-        
-        misses++;
-        return false;  // Can use move but not score
-    }
-    
-    // Store evaluation in table
-    void store(uint64_t hash, int depth, float score, TTEntry::Flag flag, const Move& best_move) {
-        // Check table size limit
-        if (table.size() >= max_size) {
-            // Simple replacement: clear oldest entries periodically
-            if (table.size() > max_size * 1.2) {
-                table.clear();
-            }
-        }
-        
-        // Replace if new entry is deeper or doesn't exist
-        auto it = table.find(hash);
-        if (it == table.end() || it->second.depth <= depth) {
-            table[hash] = TTEntry(hash, score, depth, flag, best_move);
-        }
-    }
-    
-    // Clear table (between games)
-    void clear() {
-        table.clear();
-        hits = misses = 0;
-    }
-    
-    // Performance metrics
-    float getHitRate() const {
-        size_t total = hits + misses;
-        return total > 0 ? (float)hits / total : 0.0f;
-    }
-    
-    size_t getSize() const {
-        return table.size();
-    }
-    
-    void getStatistics(size_t& hit_count, size_t& miss_count) const {
-        hit_count = hits;
-        miss_count = misses;
-    }
-};
-
 // ==================== PHASE 5A: BASIC MINIMAX ENGINE ====================
-class MinimaxEngine {
-protected:
-    BoardEvaluator* evaluator;      // Position evaluation
-    MoveGenerator* moveGenerator;   // Legal move generation
-    TranspositionTable tt;          // Position caching
-    TimeManager timeManager;        // Clock management
+
+// Structure to hold search result with evaluation and best move
+struct SearchResult {
+    float evaluation;
+    Move bestMove;
+    int depth_reached;
+    bool timeout_occurred;
     
-    // Search parameters
-    int max_depth;                  // Maximum search depth
-    int current_depth;              // Current iterative deepening level
-    bool use_iterative_deepening;   // Enable/disable iterative deepening
+    SearchResult() : evaluation(0.0f), depth_reached(0), timeout_occurred(false) {}
+    SearchResult(float eval, const Move& move, int depth = 0) 
+        : evaluation(eval), bestMove(move), depth_reached(depth), timeout_occurred(false) {}
+};
+
+class MinimaxEngine {
+private:
+    BoardEvaluator* evaluator;
+    MoveGenerator* moveGenerator;
+    TimeManager timeManager;
     
     // Search statistics
-    mutable size_t nodes_searched;
-    mutable size_t alpha_cutoffs;
-    mutable size_t beta_cutoffs;
+    int nodes_searched;
+    int max_depth_reached;
     
 public:
-    MinimaxEngine(BoardEvaluator* eval, MoveGenerator* movegen)
-        : evaluator(eval), moveGenerator(movegen), tt(500000), // 32MB table
-          max_depth(8), current_depth(1), use_iterative_deepening(true),
-          nodes_searched(0), alpha_cutoffs(0), beta_cutoffs(0) {}
+    MinimaxEngine(BoardEvaluator* eval, MoveGenerator* moveGen) 
+        : evaluator(eval), moveGenerator(moveGen), nodes_searched(0), max_depth_reached(0) {}
     
-    // Main interface: get best move for position
-    Move getBestMove(GameState& position, const std::string& player,
-                     float time_limit, float opponent_time) {
+    // Main entry point: find best move using iterative deepening
+    Move getBestMove(const GameState& position, const std::string& player, 
+                     float remaining_time, float opponent_time) {
         
-        // Initialize search
-        timeManager.startSearch(time_limit, opponent_time);
-        nodes_searched = alpha_cutoffs = beta_cutoffs = 0;
+        // Start timing
+        timeManager.startSearch(remaining_time, opponent_time);
         
-        // Log search start
-        g_logger.log(LogLevel::SEARCH, "Starting minimax search with time limit: " + 
-                    std::to_string(time_limit) + "s");
+        // Reset search statistics
+        nodes_searched = 0;
+        max_depth_reached = 0;
         
+        // Convert player string to boolean for consistency
         bool isCirclePlayer = (player == "circle");
-        Move best_move;
-        float best_score = -10000.0f;
         
-        if (use_iterative_deepening) {
-            // Iterative deepening: gradually increase search depth
-            for (current_depth = 1; current_depth <= max_depth; ++current_depth) {
-                if (timeManager.shouldStop()) break;
-                
-                // Search at current depth
-                GameState temp_pos = position;  // Copy for search
-                float score = negamax(temp_pos, current_depth, -10000.0f, 10000.0f,
-                                    true, player, best_move);
-                
-                // Update best move if search completed
-                if (!timeManager.shouldStop() && score > best_score) {
-                    best_score = score;
-                    // best_move updated by reference in negamax
-                }
-                
-                // Early termination for forced wins/losses
-                if (std::abs(score) > 9000.0f) {
-                    g_logger.log(LogLevel::SEARCH, "Early termination: forced win/loss detected (score: " + 
-                                std::to_string(score) + ")");
-                    break;
-                }
-            }
-        } else {
-            // Fixed depth search
-            GameState temp_pos = position;
-            negamax(temp_pos, max_depth, -10000.0f, 10000.0f, true, player, best_move);
+        // Get all legal moves for the root position
+        std::vector<Move> rootMoves = generateMovesForPosition(position, player);
+        
+        if (rootMoves.empty()) {
+            // No legal moves - return a default move
+            return {"move", {0,0}, {0,0}, {}, ""};
         }
         
-        // Log final search statistics
-        float elapsed_time = timeManager.getElapsedTime();
-        float nodes_per_second = elapsed_time > 0 ? nodes_searched / elapsed_time : 0;
-        size_t tt_hits, tt_misses;
-        tt.getStatistics(tt_hits, tt_misses);
+        if (rootMoves.size() == 1) {
+            // Only one legal move - no need to search
+            return rootMoves[0];
+        }
         
-        g_logger.logSearchResults(
-            current_depth - 1,  // Last completed depth
-            nodes_searched,
-            alpha_cutoffs,
-            beta_cutoffs,
-            tt_hits,
-            tt_misses,
-            elapsed_time,
-            nodes_per_second,
-            best_score
-        );
+        // Iterative deepening search
+        SearchResult bestResult;
+        bestResult.bestMove = rootMoves[0];  // Default to first legal move
         
-        std::stringstream search_summary;
-        search_summary << "Search completed: depth=" << (current_depth - 1) 
-                      << ", nodes=" << nodes_searched 
-                      << ", time=" << std::fixed << std::setprecision(3) << elapsed_time << "s"
-                      << ", nps=" << std::fixed << std::setprecision(0) << nodes_per_second;
-        g_logger.log(LogLevel::SEARCH, search_summary.str());
+        for (int depth = 1; depth <= 6; ++depth) {  // Maximum depth of 6
+            if (timeManager.shouldStop()) break;
+            
+            SearchResult currentResult = searchAtDepth(position, depth, isCirclePlayer, rootMoves);
+            
+            if (!currentResult.timeout_occurred) {
+                bestResult = currentResult;
+                max_depth_reached = depth;
+            }
+            
+            // If we found a very good position, don't waste more time
+            if (bestResult.evaluation > 50.0f) break;
+        }
         
-        return best_move;
+        return bestResult.bestMove;
     }
     
-    // Core negamax algorithm with alpha-beta pruning
-    float negamax(GameState& position, int depth, float alpha, float beta,
-                  bool isMaximizingPlayer, const std::string& player, Move& best_move) {
+private:
+    
+    // Search at a specific depth using negamax
+    SearchResult searchAtDepth(const GameState& position, int depth, bool isCirclePlayer, 
+                              const std::vector<Move>& rootMoves) {
         
+        SearchResult bestResult;
+        bestResult.evaluation = -1000000.0f;  // Negative infinity
+        bestResult.bestMove = rootMoves[0];   // Default move
+        bestResult.depth_reached = depth;
+        
+        for (const Move& move : rootMoves) {
+            if (timeManager.shouldStop()) {
+                bestResult.timeout_occurred = true;
+                break;
+            }
+            
+            // Apply move to get new position
+            GameState newPosition = position.clone();
+            if (!applyMoveToPosition(newPosition, move)) {
+                continue;  // Invalid move, skip
+            }
+            
+            // Search this branch
+            float evaluation = -negamax(newPosition, depth - 1, -1000000.0f, 1000000.0f, !isCirclePlayer);
+            
+            // Update best move if this is better
+            if (evaluation > bestResult.evaluation) {
+                bestResult.evaluation = evaluation;
+                bestResult.bestMove = move;
+            }
+        }
+        
+        return bestResult;
+    }
+    
+    // Negamax algorithm with alpha-beta pruning
+    float negamax(const GameState& position, int depth, float alpha, float beta, bool isCirclePlayer) {
         nodes_searched++;
         
-        // Check time constraint
-        if (nodes_searched % 1000 == 0 && timeManager.shouldStop()) {
-            return 0.0f;  // Return neutral score on timeout
+        // Check for timeout
+        if (timeManager.shouldStop()) {
+            return 0.0f;
         }
         
-        // Terminal node: evaluate position
+        // Terminal conditions
         if (depth == 0) {
-            bool isCircle = (player == "circle");
-            float score = evaluator->basicEvaluateBoard(position, isCircle);
-            return isMaximizingPlayer ? score : -score;
+            return evaluator->basicEvaluateBoard(position, isCirclePlayer);
         }
         
-        // Check transposition table
-        uint64_t pos_hash = position.getHash();
-        Move tt_move;
-        float tt_score;
-        
-        if (tt.probe(pos_hash, depth, alpha, beta, tt_score, tt_move)) {
-            best_move = tt_move;
-            return tt_score;
+        // Check for game ending (win condition)
+        std::string winner = position.getWinner();
+        if (!winner.empty()) {
+            if ((winner == "circle" && isCirclePlayer) || (winner == "square" && !isCirclePlayer)) {
+                return 100.0f + depth;  // Win bonus for shorter paths
+            } else {
+                return -100.0f - depth;  // Loss penalty
+            }
         }
         
-        // Generate and order moves
+        // Generate moves for current position
+        std::string currentPlayer = isCirclePlayer ? "circle" : "square";
+        std::vector<Move> moves = generateMovesForPosition(position, currentPlayer);
+        
+        if (moves.empty()) {
+            // No moves available - likely a loss
+            return -50.0f;
+        }
+        
+        float maxEval = -1000000.0f;
+        
+        for (const Move& move : moves) {
+            if (timeManager.shouldStop()) break;
+            
+            // Apply move
+            GameState newPosition = position.clone();
+            if (!applyMoveToPosition(newPosition, move)) {
+                continue;  // Invalid move
+            }
+            
+            // Recursive search
+            float evaluation = -negamax(newPosition, depth - 1, -beta, -alpha, !isCirclePlayer);
+            
+            maxEval = std::max(maxEval, evaluation);
+            alpha = std::max(alpha, evaluation);
+            
+            if (beta <= alpha) {
+                break;  // Alpha-beta cutoff
+            }
+        }
+        
+        return maxEval;
+    }
+    
+    // Generate moves for a given position and player
+    std::vector<Move> generateMovesForPosition(const GameState& position, const std::string& player) {
+        // Convert GameState to the format expected by MoveGenerator
         int rows = position.getRows();
         int cols = position.getCols();
-        const auto& score_cols = position.getScoreCols();
         
-        // Convert position to format expected by MoveGenerator
         std::vector<std::vector<std::map<std::string, std::string>>> board_map(rows,
             std::vector<std::map<std::string, std::string>>(cols));
         
-        // Simple conversion (can be optimized later)
         for (int y = 0; y < rows; ++y) {
             for (int x = 0; x < cols; ++x) {
                 uint8_t piece = position.getPiece(x, y);
@@ -2215,192 +1605,48 @@ public:
             }
         }
         
-        const auto& moves = moveGenerator->generateAllMoves(board_map, player, rows, cols, score_cols, tt_move, true);
-        
-        if (moves.empty()) {
-            // No moves available - evaluate current position
-            bool isCircle = (player == "circle");
-            float score = evaluator->basicEvaluateBoard(position, isCircle);
-            return isMaximizingPlayer ? score : -score;
-        }
-        
-        float best_score = -10000.0f;
-        Move current_best_move = moves[0];  // Default to first move
-        TTEntry::Flag tt_flag = TTEntry::UPPER_BOUND;
-        
-        // Search all moves
-        for (const auto& move : moves) {
-            // Apply move to position
-            GameState next_pos = position;  // Copy
-            if (!applyMoveToGameState(next_pos, move)) continue;  // Skip invalid moves
-            
-            // Recursive search
-            Move dummy_move;
-            float score = -negamax(next_pos, depth - 1, -beta, -alpha,
-                                 !isMaximizingPlayer, 
-                                 (player == "circle") ? "square" : "circle", dummy_move);
-            
-            // Alpha-beta pruning
-            if (score >= beta) {
-                beta_cutoffs++;
-                // Store in transposition table
-                tt.store(pos_hash, depth, score, TTEntry::LOWER_BOUND, move);
-                best_move = move;
-                return score;  // Beta cutoff
+        const std::vector<int>& score_cols = position.getScoreCols();
+        return moveGenerator->generateAllMoves(board_map, player, rows, cols, score_cols);
+    }
+    
+    // Apply a move to a GameState position
+    bool applyMoveToPosition(GameState& position, const Move& move) {
+        try {
+            if (move.action == "move") {
+                position.applyBasicMove(move.from[0], move.from[1], move.to[0], move.to[1]);
+                return true;
             }
-            
-            if (score > best_score) {
-                best_score = score;
-                current_best_move = move;
-                
-                if (score > alpha) {
-                    alpha = score;
-                    tt_flag = TTEntry::EXACT;
-                    alpha_cutoffs++;
+            else if (move.action == "flip") {
+                if (!move.orientation.empty()) {
+                    position.applyFlip(move.from[0], move.from[1], move.orientation);
+                } else {
+                    position.applyFlip(move.from[0], move.from[1]);
                 }
+                return true;
             }
+            else if (move.action == "rotate") {
+                position.applyRotate(move.from[0], move.from[1]);
+                return true;
+            }
+            else if (move.action == "push") {
+                // For push moves, we need to handle the push logic
+                // This is more complex and depends on the specific push implementation
+                // For now, we'll treat it as a basic move
+                position.applyBasicMove(move.from[0], move.from[1], move.to[0], move.to[1]);
+                return true;
+            }
+            
+            return false;  // Unknown action
         }
-        
-        // Store result in transposition table
-        tt.store(pos_hash, depth, best_score, tt_flag, current_best_move);
-        best_move = current_best_move;
-        
-        return best_score;
-    }
-    
-    // Get search statistics
-    void getStatistics(size_t& nodes, size_t& alpha_cuts, size_t& beta_cuts, 
-                      float& tt_hit_rate, int& depth_reached) const {
-        nodes = nodes_searched;
-        alpha_cuts = alpha_cutoffs;
-        beta_cuts = beta_cutoffs;
-        tt_hit_rate = tt.getHitRate();
-        depth_reached = current_depth - 1;  // Last completed depth
-    }
-    
-    void clearCache() {
-        tt.clear();
-    }
-    
-private:
-    // Apply a move to GameState (simple implementation for now)
-    bool applyMoveToGameState(GameState& state, const Move& move) const {
-        int from_x = move.from[0], from_y = move.from[1];
-        int to_x = move.to[0], to_y = move.to[1];
-        
-        // Validate move bounds
-        if (from_x < 0 || from_x >= state.getCols() || from_y < 0 || from_y >= state.getRows() ||
-            to_x < 0 || to_x >= state.getCols() || to_y < 0 || to_y >= state.getRows()) {
-            return false;
+        catch (...) {
+            return false;  // Move application failed
         }
-        
-        // Get piece at from position
-        uint8_t piece = state.getPiece(from_x, from_y);
-        if (piece == EMPTY) return false;
-        
-        // Simple move: remove from source, place at destination
-        state.setPiece(from_x, from_y, EMPTY);
-        state.setPiece(to_x, to_y, piece);
-        
-        // Update game hash (basic XOR update)
-        state.updateHashAfterMove(from_x, from_y, to_x, to_y, piece);
-        
-        return true;
     }
-};
-
-// ==================== PHASE 5B: ITERATIVE DEEPENING ENHANCEMENT ====================
-
-// Enhanced MinimaxEngine with better time management and iterative deepening
-class AdvancedMinimaxEngine : public MinimaxEngine {
-private:
-    std::vector<Move> pv_line;           // Principal variation
-    std::vector<float> depth_scores;     // Score history by depth
-    bool aspiration_windows;             // Use aspiration window search
     
 public:
-    AdvancedMinimaxEngine(BoardEvaluator* eval, MoveGenerator* movegen)
-        : MinimaxEngine(eval, movegen), aspiration_windows(true) {
-        pv_line.reserve(32);  // Reserve space for principal variation
-        depth_scores.reserve(16);
-    }
-    
-    // Enhanced iterative deepening with aspiration windows
-    Move getBestMoveAdvanced(GameState& position, const std::string& player,
-                            float time_limit, float opponent_time) {
-        
-        // Initialize search
-        timeManager.startSearch(time_limit, opponent_time);
-        nodes_searched = alpha_cutoffs = beta_cutoffs = 0;
-        pv_line.clear();
-        depth_scores.clear();
-        
-        // Log advanced search start
-        g_logger.log(LogLevel::SEARCH, "Starting advanced iterative deepening search");
-        
-        bool isCirclePlayer = (player == "circle");
-        Move best_move;
-        float best_score = -10000.0f;
-        float prev_score = 0.0f;
-        
-        // Iterative deepening with aspiration windows
-        for (current_depth = 1; current_depth <= max_depth; ++current_depth) {
-            if (timeManager.shouldStop()) {
-                g_logger.log(LogLevel::SEARCH, "Search stopped due to time limit at depth " + 
-                            std::to_string(current_depth));
-                break;
-            }
-            
-            g_logger.log(LogLevel::DEBUG, "Starting search at depth " + std::to_string(current_depth));
-            
-            float alpha = -10000.0f;
-            float beta = 10000.0f;
-            
-            // Use aspiration windows for deeper searches (depth 3+)
-            if (aspiration_windows && current_depth >= 3 && depth_scores.size() > 0) {
-                float window = 50.0f;  // Aspiration window size
-                alpha = prev_score - window;
-                beta = prev_score + window;
-            }
-            
-            // Search with aspiration window
-            GameState temp_pos = position;
-            float score = negamax(temp_pos, current_depth, alpha, beta,
-                                true, player, best_move);
-            
-            // Handle aspiration window failures
-            if (aspiration_windows && current_depth >= 3) {
-                if (score <= alpha) {
-                    // Research with lower bound
-                    temp_pos = position;
-                    score = negamax(temp_pos, current_depth, -10000.0f, beta,
-                                  true, player, best_move);
-                } else if (score >= beta) {
-                    // Research with upper bound  
-                    temp_pos = position;
-                    score = negamax(temp_pos, current_depth, alpha, 10000.0f,
-                                  true, player, best_move);
-                }
-            }
-            
-            // Update best move if search completed
-            if (!timeManager.shouldStop()) {
-                best_score = score;
-                depth_scores.push_back(score);
-                prev_score = score;
-                
-                // Early termination for forced wins/losses
-                if (std::abs(score) > 9000.0f) break;
-            }
-        }
-        
-        return best_move;
-    }
-    
-    // Get principal variation
-    const std::vector<Move>& getPrincipalVariation() const {
-        return pv_line;
-    }
+    // Get search statistics
+    int getNodesSearched() const { return nodes_searched; }
+    int getMaxDepthReached() const { return max_depth_reached; }
 };
 
 
@@ -2412,13 +1658,13 @@ private:
     std::mt19937 gen;                   // Random number generator
     MoveGenerator moveGen;               // High-performance move generator
     BoardEvaluator evaluator;            // Board evaluation system
-    AdvancedMinimaxEngine* searchEngine; // Minimax search engine
+    MinimaxEngine* searchEngine;         // Basic minimax search engine
     GameState gameState;                 // Current game state representation
 
 public:
     explicit StudentAgent(std::string side) : side(std::move(side)), gen(rd()), gameState(5, 5) {
-        // Initialize search engine
-        searchEngine = new AdvancedMinimaxEngine(&evaluator, &moveGen);
+        // Initialize basic search engine
+        searchEngine = new MinimaxEngine(&evaluator, &moveGen);
     }
     
     ~StudentAgent() {
@@ -2447,20 +1693,57 @@ public:
         
         std::string chosen_reasoning = "Minimax search";
         
-        // Use minimax search to find best move
+        // Use basic minimax search to find best move
         try {
-            Move bestMove = searchEngine->getBestMoveAdvanced(gameState, side, 
-                                                            current_player_time, opponent_time);
+            Move bestMove = searchEngine->getBestMove(gameState, side, 
+                                                     current_player_time, opponent_time);
             
-            // Validate the move is legal
-            const auto& moves = moveGen.generateAllMoves(board, side, rows, cols, score_cols);
+            // Convert board to format expected by MoveGenerator for validation
+            std::vector<std::vector<std::map<std::string, std::string>>> board_map(rows,
+                std::vector<std::map<std::string, std::string>>(cols));
+            
+            for (int y = 0; y < rows; ++y) {
+                for (int x = 0; x < cols; ++x) {
+                    uint8_t piece = gameState.getPiece(x, y);
+                    if (piece != EMPTY) {
+                        board_map[y][x]["owner"] = isPieceOwner(piece, "circle") ? "circle" : "square";
+                        board_map[y][x]["side"] = isPieceStone(piece) ? "stone" : "river";
+                        if (!isPieceStone(piece)) {
+                            board_map[y][x]["orientation"] = isRiverHorizontal(piece) ? "horizontal" : "vertical";
+                        }
+                    }
+                }
+            }
+            
+            // Validate the move is legal using the same board format as the search
+            const auto& moves = moveGen.generateAllMoves(board_map, side, rows, cols, score_cols);
+            
+            g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Generated " + std::to_string(moves.size()) + 
+                        " legal moves for validation");
+            g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Minimax returned move: " + 
+                        bestMove.action + " (" + std::to_string(bestMove.from[0]) + "," + 
+                        std::to_string(bestMove.from[1]) + ") -> (" + 
+                        std::to_string(bestMove.to[0]) + "," + std::to_string(bestMove.to[1]) + ")");
+            
+            // Log first few legal moves for comparison
+            for (size_t i = 0; i < std::min((size_t)5, moves.size()); ++i) {
+                const auto& move = moves[i];
+                g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Legal move " + std::to_string(i+1) + ": " + 
+                            move.action + " (" + std::to_string(move.from[0]) + "," + 
+                            std::to_string(move.from[1]) + ") -> (" + 
+                            std::to_string(move.to[0]) + "," + std::to_string(move.to[1]) + ")");
+            }
+            
             for (const auto& move : moves) {
                 if (move == bestMove) {
+                    g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Move found in legal moves - SUCCESS!");
                     g_logger.logDecision(g_logger.moveToString(bestMove), chosen_reasoning);
                     g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
                     return bestMove;
                 }
             }
+            
+            g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Move NOT found in legal moves - FAILED!");
             
             // Fallback: if minimax move is invalid, use first legal move
             if (!moves.empty()) {
@@ -2482,7 +1765,24 @@ public:
         // FALLBACK: Use evaluation-based move selection  
         g_logger.log(LogLevel::INFO, "Using evaluation-based fallback selection");
         
-        const auto& moves = moveGen.generateAllMoves(board, side, rows, cols, score_cols);
+        // Convert board to format expected by MoveGenerator  
+        std::vector<std::vector<std::map<std::string, std::string>>> board_map(rows,
+            std::vector<std::map<std::string, std::string>>(cols));
+        
+        for (int y = 0; y < rows; ++y) {
+            for (int x = 0; x < cols; ++x) {
+                uint8_t piece = gameState.getPiece(x, y);
+                if (piece != EMPTY) {
+                    board_map[y][x]["owner"] = isPieceOwner(piece, "circle") ? "circle" : "square";
+                    board_map[y][x]["side"] = isPieceStone(piece) ? "stone" : "river";
+                    if (!isPieceStone(piece)) {
+                        board_map[y][x]["orientation"] = isRiverHorizontal(piece) ? "horizontal" : "vertical";
+                    }
+                }
+            }
+        }
+        
+        const auto& moves = moveGen.generateAllMoves(board_map, side, rows, cols, score_cols);
         if (moves.empty()) {
             chosen_reasoning = "No legal moves available - emergency fallback";
             g_logger.log(LogLevel::ERROR, "No legal moves found!");
@@ -2643,51 +1943,6 @@ public:
         // Test rotate safety for rivers (using all required parameters)
         bool rotateSafe = moveGen.isRotateSafe(test_board, 5, 2, "circle", 7, 7, score_cols, "");
         std::cout << "✓ Rotate safety (circle river): " << (rotateSafe ? "SAFE" : "UNSAFE") << "\n";
-        
-        std::cout << "\nTest 2: Move Categorization\n";
-        
-        // Test different move categories (using all required parameters)
-        auto captureM = moveGen.generateCaptureMoves(test_board, "circle", 7, 7, score_cols);
-        auto quietM = moveGen.generateQuietMoves(test_board, "circle", 7, 7, score_cols);
-        auto aggressiveM = moveGen.generateAggressiveMoves(test_board, "circle", 7, 7, score_cols);
-        
-        std::cout << "✓ Capture moves: " << captureM.size() << "\n";
-        std::cout << "✓ Quiet moves: " << quietM.size() << "\n";
-        std::cout << "✓ Aggressive moves: " << aggressiveM.size() << "\n";
-        
-        std::cout << "\nTest 3: Move Ordering System\n";
-        
-        // Test move ordering with priority scoring (using all required parameters)
-        auto orderedM = moveGen.generateOrderedMoves(test_board, "circle", 7, 7, score_cols);
-        std::cout << "✓ Generated ordered moves: " << orderedM.size() << "\n";
-        
-        // Show top prioritized moves
-        std::cout << "✓ Top 3 prioritized moves:\n";
-        for (size_t i = 0; i < std::min(orderedM.size(), size_t(3)); ++i) {
-            const auto& move = orderedM[i];
-            int score = moveGen.scoreMoveForOrdering(move, test_board, "circle", 7, 7, score_cols);
-            std::cout << "  " << (i+1) << ". " << move.action << " from (" 
-                      << move.from[0] << "," << move.from[1] << ") (Score: " << score << ")\n";
-        }
-        
-        std::cout << "\nTest 4: GameState Integration\n";
-        
-        // Create GameState with simple constructor for testing
-        GameState gameState(7, 7);
-        
-        // Test GameState-based move generation
-        auto gsMovesCircle = moveGen.generateMovesWithGameState(gameState, "circle");
-        auto gsMovesCross = moveGen.generateMovesWithGameState(gameState, "cross");
-        
-        std::cout << "✓ GameState moves (circle): " << gsMovesCircle.size() << "\n";
-        std::cout << "✓ GameState moves (cross): " << gsMovesCross.size() << "\n";
-        
-        // Test GameState safety methods
-        bool gsFlipSafe = moveGen.isFlipSafeWithGameState(gameState, 0, 2, "circle", "horizontal");
-        bool gsRotateSafe = moveGen.isRotateSafeWithGameState(gameState, 5, 2, "circle");
-        
-        std::cout << "✓ GameState flip safety: " << (gsFlipSafe ? "SAFE" : "UNSAFE") << "\n";
-        std::cout << "✓ GameState rotate safety: " << (gsRotateSafe ? "SAFE" : "UNSAFE") << "\n";
         
         std::cout << "\n🎉 PHASE 3 TESTS COMPLETED! 🎉\n";
         std::cout << "==============================\n\n";
