@@ -10,8 +10,187 @@
 #include <iostream>
 #include <climits>
 #include <chrono>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <filesystem>
+#include <cstdint>
+#include <deque>
+#include <unordered_set>
 
 namespace py = pybind11;
+
+// Forward declarations
+struct Move;
+
+// ==================== AI DECISION LOGGING SYSTEM ====================
+
+enum class LogLevel {
+    DEBUG = 0,    // Detailed debug information
+    INFO = 1,     // General information
+    SEARCH = 2,   // Search-specific information
+    DECISION = 3, // Major decision points
+    ERROR = 4     // Errors and warnings
+};
+
+class AILogger {
+private:
+    std::string log_directory;
+    std::string game_session_id;
+    std::ofstream main_log_file;
+    std::ofstream moves_log_file;
+    std::ofstream search_log_file;
+    LogLevel min_log_level;
+    int move_number;
+    bool logging_enabled;
+    
+public:
+    AILogger() : min_log_level(LogLevel::INFO), move_number(0), logging_enabled(true) {
+        initializeLogging();
+    }
+    
+    ~AILogger() {
+        if (main_log_file.is_open()) main_log_file.close();
+        if (moves_log_file.is_open()) moves_log_file.close();
+        if (search_log_file.is_open()) search_log_file.close();
+    }
+    
+    void initializeLogging() {
+        if (!logging_enabled) return;
+        
+        // Create logs directory if it doesn't exist
+        log_directory = "logs";
+        std::filesystem::create_directories(log_directory);
+        
+        // Generate unique game session ID
+        auto now = std::chrono::system_clock::now();
+        auto time_t = std::chrono::system_clock::to_time_t(now);
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now.time_since_epoch()) % 1000;
+        
+        std::stringstream ss;
+        ss << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S");
+        ss << "_" << std::setfill('0') << std::setw(3) << ms.count();
+        game_session_id = ss.str();
+        
+        // Open log files
+        std::string main_log_path = log_directory + "/game_" + game_session_id + ".log";
+        std::string moves_log_path = log_directory + "/moves_" + game_session_id + ".log";
+        std::string search_log_path = log_directory + "/search_" + game_session_id + ".log";
+        
+        main_log_file.open(main_log_path, std::ios::out | std::ios::trunc);
+        moves_log_file.open(moves_log_path, std::ios::out | std::ios::trunc);
+        search_log_file.open(search_log_path, std::ios::out | std::ios::trunc);
+        
+        // Write headers
+        if (main_log_file.is_open()) {
+            main_log_file << "========================================\n";
+            main_log_file << "AI AGENT DECISION LOG - Session " << game_session_id << "\n";
+            main_log_file << "========================================\n";
+            main_log_file << "Timestamp: " << getCurrentTimestamp() << "\n";
+            main_log_file << "Log Level: " << static_cast<int>(min_log_level) << "\n\n";
+        }
+        
+        if (moves_log_file.is_open()) {
+            moves_log_file << "Move#,Timestamp,Generated,Ordered,Capture,Quiet,Aggressive,BestMove,Score\n";
+        }
+        
+        if (search_log_file.is_open()) {
+            search_log_file << "Move#,Depth,Nodes,AlphaCutoffs,BetaCutoffs,TTHits,TTMisses,TimeUsed,NodesPerSec,BestScore\n";
+        }
+    }
+    
+    void setLogLevel(LogLevel level) {
+        min_log_level = level;
+    }
+    
+    void enableLogging(bool enable) {
+        logging_enabled = enable;
+    }
+    
+    void nextMove() {
+        move_number++;
+    }
+    
+    void log(LogLevel level, const std::string& message) {
+        if (!logging_enabled || level < min_log_level || !main_log_file.is_open()) return;
+        
+        std::string level_str;
+        switch (level) {
+            case LogLevel::DEBUG: level_str = "DEBUG"; break;
+            case LogLevel::INFO: level_str = "INFO"; break;
+            case LogLevel::SEARCH: level_str = "SEARCH"; break;
+            case LogLevel::DECISION: level_str = "DECISION"; break;
+            case LogLevel::ERROR: level_str = "ERROR"; break;
+        }
+        
+        main_log_file << "[" << getCurrentTimestamp() << "] " 
+                     << "[" << level_str << "] " 
+                     << "[Move " << move_number << "] " 
+                     << message << "\n";
+        main_log_file.flush();
+    }
+    
+    void logMoveGeneration(int total_moves, int ordered_moves, int capture_moves, 
+                          int quiet_moves, int aggressive_moves, 
+                          const std::string& best_move_desc, float best_score) {
+        if (!logging_enabled || !moves_log_file.is_open()) return;
+        
+        moves_log_file << move_number << ","
+                      << getCurrentTimestamp() << ","
+                      << total_moves << ","
+                      << ordered_moves << ","
+                      << capture_moves << ","
+                      << quiet_moves << ","
+                      << aggressive_moves << ","
+                      << "\"" << best_move_desc << "\","
+                      << best_score << "\n";
+        moves_log_file.flush();
+    }
+    
+    void logSearchResults(int depth, size_t nodes, size_t alpha_cutoffs, size_t beta_cutoffs,
+                         size_t tt_hits, size_t tt_misses, float time_used, 
+                         float nodes_per_second, float best_score) {
+        if (!logging_enabled || !search_log_file.is_open()) return;
+        
+        search_log_file << move_number << ","
+                       << depth << ","
+                       << nodes << ","
+                       << alpha_cutoffs << ","
+                       << beta_cutoffs << ","
+                       << tt_hits << ","
+                       << tt_misses << ","
+                       << std::fixed << std::setprecision(3) << time_used << ","
+                       << std::fixed << std::setprecision(0) << nodes_per_second << ","
+                       << std::fixed << std::setprecision(2) << best_score << "\n";
+        search_log_file.flush();
+    }
+    
+    void logDecision(const std::string& chosen_move, const std::string& reasoning) {
+        log(LogLevel::DECISION, "FINAL DECISION: " + chosen_move + " | Reasoning: " + reasoning);
+    }
+    
+    std::string getCurrentTimestamp() const {
+        auto now = std::chrono::system_clock::now();
+        auto time_t = std::chrono::system_clock::to_time_t(now);
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now.time_since_epoch()) % 1000;
+        
+        std::stringstream ss;
+        ss << std::put_time(std::localtime(&time_t), "%H:%M:%S");
+        ss << "." << std::setfill('0') << std::setw(3) << ms.count();
+        return ss.str();
+    }
+    
+    std::string moveToString(const Move& move) const;
+    
+    std::string getSessionId() const {
+        return game_session_id;
+    }
+};
+
+// Global logger instance
+static AILogger g_logger;
 
 /*
 =========================================================
@@ -271,6 +450,13 @@ public:
         computeHash();
     }
     
+    // Update hash incrementally after move (for efficiency)
+    void updateHashAfterMove(int from_x, int from_y, int to_x, int to_y, uint8_t piece) {
+        // XOR out old position, XOR in new position
+        hash_value ^= (uint64_t(piece) << (from_x + from_y * cols)) * 0x9e3779b97f4a7c15ULL;
+        hash_value ^= (uint64_t(piece) << (to_x + to_y * cols)) * 0x9e3779b97f4a7c15ULL;
+    }
+    
     // Deep copy for search tree
     GameState clone() const {
         return GameState(*this);
@@ -514,7 +700,31 @@ struct Move {
         : action(std::move(act)), from(std::move(f)), to(std::move(t)) {}
     Move(std::string act, std::vector<int> f, std::vector<int> t, std::vector<int> pt, std::string ori = "")
         : action(std::move(act)), from(std::move(f)), to(std::move(t)), pushed_to(std::move(pt)), orientation(std::move(ori)) {}
+        
+    // Equality operator for comparison
+    bool operator==(const Move& other) const {
+        return action == other.action && from == other.from && to == other.to && 
+               pushed_to == other.pushed_to && orientation == other.orientation;
+    }
 };
+
+// ==================== LOGGER METHOD IMPLEMENTATIONS ====================
+
+// Implementation of moveToString (after Move struct is defined)
+std::string AILogger::moveToString(const Move& move) const {
+    std::stringstream ss;
+    ss << move.action;
+    if (!move.from.empty()) {
+        ss << " (" << move.from[0] << "," << move.from[1] << ")";
+    }
+    if (!move.to.empty()) {
+        ss << " -> (" << move.to[0] << "," << move.to[1] << ")";
+    }
+    if (!move.orientation.empty()) {
+        ss << " [" << move.orientation << "]";
+    }
+    return ss.str();
+}
 
 // ==================== BOARD EVALUATION SYSTEM ====================
 
@@ -870,12 +1080,14 @@ public:
     
     // ==================== PHASE 1: CORE MOVE GENERATION ====================
     
-    // Main entry point - generates all legal moves for a player
+    // Main entry point - generates all legal moves for a player with optional move ordering
     const std::vector<Move>& generateAllMoves(
         const std::vector<std::vector<std::map<std::string, std::string>>>& board,
         const std::string& player,
         int rows, int cols, 
-        const std::vector<int>& score_cols) {
+        const std::vector<int>& score_cols,
+        const Move& tt_best_move = Move(),
+        bool enable_move_ordering = true) {
         
         // Clear buffer and start fresh
         move_buffer.clear();
@@ -893,8 +1105,198 @@ public:
             }
         }
         
+        // Apply move ordering if enabled
+        if (enable_move_ordering && move_buffer.size() > 1) {
+            orderMovesForSearch(move_buffer, board, player, rows, cols, score_cols, tt_best_move);
+        }
+        
+        // Log move generation details
+        logMoveGeneration(board, player);
+        
         return move_buffer;
     }
+    
+    // ==================== PHASE 5B: MOVE ORDERING FOR SEARCH ====================
+    
+    // Order moves for optimal alpha-beta pruning
+    void orderMovesForSearch(std::vector<Move>& moves,
+                           const std::vector<std::vector<std::map<std::string, std::string>>>& board,
+                           const std::string& player,
+                           int rows, int cols,
+                           const std::vector<int>& score_cols,
+                           const Move& tt_best_move) const {
+        
+        // Sort moves by search priority (higher scores first)
+        std::sort(moves.begin(), moves.end(), 
+                 [this, &board, &player, rows, cols, &score_cols, &tt_best_move]
+                 (const Move& a, const Move& b) {
+                     return getMoveSearchScore(a, board, player, rows, cols, score_cols, tt_best_move) >
+                            getMoveSearchScore(b, board, player, rows, cols, score_cols, tt_best_move);
+                 });
+    }
+    
+    // Assign search priority score to move for ordering
+    int getMoveSearchScore(const Move& move,
+                          const std::vector<std::vector<std::map<std::string, std::string>>>& board,
+                          const std::string& player,
+                          int rows, int cols,
+                          const std::vector<int>& score_cols,
+                          const Move& tt_best_move) const {
+        
+        int score = 0;
+        
+        // Highest priority: Transposition table best move
+        if (move == tt_best_move) {
+            score += 10000;
+        }
+        
+        int from_x = move.from[0], from_y = move.from[1];
+        int to_x = move.to[0], to_y = move.to[1];
+        
+        // High priority: Captures (moving to opponent territory)
+        if (to_y < rows && to_x < cols && to_x >= 0 && to_y >= 0) {
+            const auto& target_cell = board[to_y][to_x];
+            if (!target_cell.empty()) {
+                std::string target_owner = getOwnerFromCell(target_cell);
+                if (target_owner != player) {
+                    score += 5000;  // Capture bonus
+                    
+                    // Prioritize capturing stronger pieces
+                    std::string piece_side = getSideFromCell(target_cell);
+                    if (piece_side == "stone") {
+                        score += 1000;  // Stone captures are valuable
+                    } else {
+                        score += 800;   // River captures
+                    }
+                }
+            }
+        }
+        
+        // Medium priority: Moves toward scoring columns
+        bool moves_toward_score_col = false;
+        for (int col : score_cols) {
+            if (std::abs(to_x - col) < std::abs(from_x - col)) {
+                score += 2000;
+                moves_toward_score_col = true;
+                break;
+            }
+        }
+        
+        // Medium priority: Central board control
+        int center_x = cols / 2;
+        int center_y = rows / 2;
+        int distance_to_center = std::abs(to_x - center_x) + std::abs(to_y - center_y);
+        score += (20 - distance_to_center) * 50;  // Closer to center = better
+        
+        // Low priority: Piece mobility (prefer moves that maintain mobility)
+        if (from_y < rows && from_x < cols && from_x >= 0 && from_y >= 0) {
+            const auto& from_cell = board[from_y][from_x];
+            std::string piece_side = getSideFromCell(from_cell);
+            
+            if (piece_side == "river") {
+                score += 300;  // Rivers are more mobile
+                
+                // Check if move creates flow opportunities
+                std::string orientation = getRiverOrientationFromCell(from_cell);
+                if (orientation == "horizontal" && to_x != from_x) {
+                    score += 200;  // Horizontal river moving horizontally
+                }
+                if (orientation == "vertical" && to_y != from_y) {
+                    score += 200;  // Vertical river moving vertically
+                }
+            } else {
+                score += 100;  // Stones are less mobile but stable
+            }
+        }
+        
+        // Penalty: Moving away from scoring columns
+        if (!moves_toward_score_col) {
+            for (int col : score_cols) {
+                if (std::abs(to_x - col) > std::abs(from_x - col)) {
+                    score -= 500;  // Moving away from scoring
+                    break;
+                }
+            }
+        }
+        
+        return score;
+    }
+    
+private:
+    // Log move generation statistics
+    void logMoveGeneration(const std::vector<std::vector<std::map<std::string, std::string>>>& board,
+                          const std::string& player) const {
+        
+        int capture_moves = 0, quiet_moves = 0, aggressive_moves = 0;
+        std::string best_move_desc = "none";
+        float best_score = -10000.0f;
+        
+        // Analyze generated moves
+        for (size_t i = 0; i < move_buffer.size(); ++i) {
+            const auto& move = move_buffer[i];
+            
+            // Categorize move
+            bool is_capture = false;
+            bool is_aggressive = false;
+            
+            // Check if move captures opponent piece
+            if (!move.to.empty() && move.to[0] >= 0 && move.to[1] >= 0 && 
+                move.to[1] < board.size() && move.to[0] < board[0].size()) {
+                const auto& target_cell = board[move.to[1]][move.to[0]];
+                if (!target_cell.empty()) {
+                    std::string target_owner = getOwnerFromCell(target_cell);
+                    if (target_owner != player) {
+                        is_capture = true;
+                        capture_moves++;
+                    }
+                }
+            }
+            
+            // Check if move is aggressive (moving toward opponent)
+            if (move.action == "move" && !move.from.empty() && !move.to.empty()) {
+                int from_y = move.from[1];
+                int to_y = move.to[1];
+                bool is_circle = (player == "circle");
+                
+                if (is_circle && to_y < from_y) is_aggressive = true;  // Circle moving up
+                if (!is_circle && to_y > from_y) is_aggressive = true; // Square moving down
+            }
+            
+            if (is_aggressive) aggressive_moves++;
+            if (!is_capture && !is_aggressive) quiet_moves++;
+            
+            // Track best move (first move has highest priority after ordering)
+            if (i == 0) {
+                best_move_desc = g_logger.moveToString(move);
+                best_score = 1000.0f; // Placeholder score
+            }
+        }
+        
+        // Log to CSV
+        g_logger.logMoveGeneration(
+            move_buffer.size(),     // total moves
+            move_buffer.size(),     // ordered moves (all moves are ordered)
+            capture_moves,          // capture moves
+            quiet_moves,           // quiet moves  
+            aggressive_moves,       // aggressive moves
+            best_move_desc,        // best move description
+            best_score             // best move score
+        );
+        
+        // Log detailed information
+        std::stringstream details;
+        details << "Generated " << move_buffer.size() << " moves ("
+                << capture_moves << " captures, "
+                << quiet_moves << " quiet, "
+                << aggressive_moves << " aggressive) for " << player;
+        g_logger.log(LogLevel::INFO, details.str());
+        
+        if (!move_buffer.empty()) {
+            g_logger.log(LogLevel::DEBUG, "Top move: " + best_move_desc);
+        }
+    }
+
+public:
     
     // ==================== PHASE 3: MOVE CATEGORIZATION ====================
     
@@ -1486,44 +1888,616 @@ public:
 // Static member definition
 const std::vector<std::pair<int,int>> MoveGenerator::DIRECTIONS = {{1,0},{-1,0},{0,1},{0,-1}};
 
-// ---- Student Agent ----
+// ==================== MINIMAX SEARCH ENGINE ====================
+
+// ==================== PHASE 5A: TIME MANAGER ====================
+class TimeManager {
+private:
+    std::chrono::high_resolution_clock::time_point search_start;
+    float allocated_time;           // Time allocated for this move (seconds)
+    float emergency_buffer;         // Reserve time for critical positions
+    bool time_up;                   // Emergency stop flag
+    float total_remaining_time;     // Total time left in game
+    
+public:
+    TimeManager() : allocated_time(0.0f), emergency_buffer(2.0f), time_up(false), total_remaining_time(60.0f) {}
+    
+    // Start search timer and allocate time for this move
+    void startSearch(float remaining_time, float opponent_time) {
+        search_start = std::chrono::high_resolution_clock::now();
+        total_remaining_time = remaining_time;
+        time_up = false;
+        
+        // Dynamic time allocation based on game situation
+        allocated_time = allocateTimeForMove(remaining_time, opponent_time);
+    }
+    
+    // Check if we should stop search due to time constraints
+    bool shouldStop() const {
+        if (time_up) return true;
+        return getElapsedTime() >= allocated_time;
+    }
+    
+    // Force stop (for emergency situations)
+    void forceStop() {
+        time_up = true;
+    }
+    
+    // Get elapsed time since search started
+    float getElapsedTime() const {
+        auto now = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - search_start);
+        return duration.count() / 1000.0f;  // Convert to seconds
+    }
+    
+    // Get remaining time for this search
+    float getRemainingTime() const {
+        return std::max(0.0f, allocated_time - getElapsedTime());
+    }
+    
+private:
+    // Allocate time for current move based on game state
+    float allocateTimeForMove(float remaining_time, float opponent_time) const {
+        // Safety check: always reserve emergency buffer
+        float usable_time = std::max(0.1f, remaining_time - emergency_buffer);
+        
+        // Basic time allocation strategy
+        if (remaining_time > 30.0f) {
+            // Early/mid game: use moderate time
+            return std::min(5.0f, usable_time * 0.15f);
+        } else if (remaining_time > 10.0f) {
+            // Late game: be more aggressive with time usage
+            return std::min(8.0f, usable_time * 0.25f);
+        } else {
+            // Endgame: use most remaining time but keep emergency reserve
+            return std::min(remaining_time * 0.7f, usable_time);
+        }
+    }
+};
+
+// ==================== PHASE 5A: TRANSPOSITION TABLE ====================
+struct TTEntry {
+    uint64_t hash = 0;              // Position hash for verification
+    float score = 0.0f;             // Evaluated score
+    int depth = -1;                 // Search depth of this entry
+    enum Flag { EXACT, LOWER_BOUND, UPPER_BOUND } flag = EXACT;
+    Move best_move;                 // Best move from this position
+    bool is_valid = false;          // Entry validity flag
+    
+    TTEntry() = default;
+    TTEntry(uint64_t h, float s, int d, Flag f, const Move& move)
+        : hash(h), score(s), depth(d), flag(f), best_move(move), is_valid(true) {}
+};
+
+class TranspositionTable {
+private:
+    std::unordered_map<uint64_t, TTEntry> table;
+    size_t max_size;                // Memory limit for table (number of entries)
+    mutable size_t hits, misses;    // Performance statistics
+    
+public:
+    TranspositionTable(size_t max_entries = 1000000) // Default ~64MB
+        : max_size(max_entries), hits(0), misses(0) {
+        table.reserve(max_entries / 2);  // Reserve space for efficiency
+    }
+    
+    // Probe table for existing evaluation
+    bool probe(uint64_t hash, int depth, float alpha, float beta, 
+               float& score, Move& best_move) const {
+        auto it = table.find(hash);
+        if (it == table.end() || !it->second.is_valid) {
+            misses++;
+            return false;
+        }
+        
+        const TTEntry& entry = it->second;
+        
+        // Hash collision check
+        if (entry.hash != hash) {
+            misses++;
+            return false;
+        }
+        
+        // Store best move regardless of depth (for move ordering)
+        best_move = entry.best_move;
+        
+        // Only use score if search depth is sufficient
+        if (entry.depth >= depth) {
+            hits++;
+            
+            switch (entry.flag) {
+                case TTEntry::EXACT:
+                    score = entry.score;
+                    return true;
+                case TTEntry::LOWER_BOUND:
+                    if (entry.score >= beta) {
+                        score = entry.score;
+                        return true;
+                    }
+                    break;
+                case TTEntry::UPPER_BOUND:
+                    if (entry.score <= alpha) {
+                        score = entry.score;
+                        return true;
+                    }
+                    break;
+            }
+        }
+        
+        misses++;
+        return false;  // Can use move but not score
+    }
+    
+    // Store evaluation in table
+    void store(uint64_t hash, int depth, float score, TTEntry::Flag flag, const Move& best_move) {
+        // Check table size limit
+        if (table.size() >= max_size) {
+            // Simple replacement: clear oldest entries periodically
+            if (table.size() > max_size * 1.2) {
+                table.clear();
+            }
+        }
+        
+        // Replace if new entry is deeper or doesn't exist
+        auto it = table.find(hash);
+        if (it == table.end() || it->second.depth <= depth) {
+            table[hash] = TTEntry(hash, score, depth, flag, best_move);
+        }
+    }
+    
+    // Clear table (between games)
+    void clear() {
+        table.clear();
+        hits = misses = 0;
+    }
+    
+    // Performance metrics
+    float getHitRate() const {
+        size_t total = hits + misses;
+        return total > 0 ? (float)hits / total : 0.0f;
+    }
+    
+    size_t getSize() const {
+        return table.size();
+    }
+    
+    void getStatistics(size_t& hit_count, size_t& miss_count) const {
+        hit_count = hits;
+        miss_count = misses;
+    }
+};
+
+// ==================== PHASE 5A: BASIC MINIMAX ENGINE ====================
+class MinimaxEngine {
+protected:
+    BoardEvaluator* evaluator;      // Position evaluation
+    MoveGenerator* moveGenerator;   // Legal move generation
+    TranspositionTable tt;          // Position caching
+    TimeManager timeManager;        // Clock management
+    
+    // Search parameters
+    int max_depth;                  // Maximum search depth
+    int current_depth;              // Current iterative deepening level
+    bool use_iterative_deepening;   // Enable/disable iterative deepening
+    
+    // Search statistics
+    mutable size_t nodes_searched;
+    mutable size_t alpha_cutoffs;
+    mutable size_t beta_cutoffs;
+    
+public:
+    MinimaxEngine(BoardEvaluator* eval, MoveGenerator* movegen)
+        : evaluator(eval), moveGenerator(movegen), tt(500000), // 32MB table
+          max_depth(8), current_depth(1), use_iterative_deepening(true),
+          nodes_searched(0), alpha_cutoffs(0), beta_cutoffs(0) {}
+    
+    // Main interface: get best move for position
+    Move getBestMove(GameState& position, const std::string& player,
+                     float time_limit, float opponent_time) {
+        
+        // Initialize search
+        timeManager.startSearch(time_limit, opponent_time);
+        nodes_searched = alpha_cutoffs = beta_cutoffs = 0;
+        
+        // Log search start
+        g_logger.log(LogLevel::SEARCH, "Starting minimax search with time limit: " + 
+                    std::to_string(time_limit) + "s");
+        
+        bool isCirclePlayer = (player == "circle");
+        Move best_move;
+        float best_score = -10000.0f;
+        
+        if (use_iterative_deepening) {
+            // Iterative deepening: gradually increase search depth
+            for (current_depth = 1; current_depth <= max_depth; ++current_depth) {
+                if (timeManager.shouldStop()) break;
+                
+                // Search at current depth
+                GameState temp_pos = position;  // Copy for search
+                float score = negamax(temp_pos, current_depth, -10000.0f, 10000.0f,
+                                    true, player, best_move);
+                
+                // Update best move if search completed
+                if (!timeManager.shouldStop() && score > best_score) {
+                    best_score = score;
+                    // best_move updated by reference in negamax
+                }
+                
+                // Early termination for forced wins/losses
+                if (std::abs(score) > 9000.0f) {
+                    g_logger.log(LogLevel::SEARCH, "Early termination: forced win/loss detected (score: " + 
+                                std::to_string(score) + ")");
+                    break;
+                }
+            }
+        } else {
+            // Fixed depth search
+            GameState temp_pos = position;
+            negamax(temp_pos, max_depth, -10000.0f, 10000.0f, true, player, best_move);
+        }
+        
+        // Log final search statistics
+        float elapsed_time = timeManager.getElapsedTime();
+        float nodes_per_second = elapsed_time > 0 ? nodes_searched / elapsed_time : 0;
+        size_t tt_hits, tt_misses;
+        tt.getStatistics(tt_hits, tt_misses);
+        
+        g_logger.logSearchResults(
+            current_depth - 1,  // Last completed depth
+            nodes_searched,
+            alpha_cutoffs,
+            beta_cutoffs,
+            tt_hits,
+            tt_misses,
+            elapsed_time,
+            nodes_per_second,
+            best_score
+        );
+        
+        std::stringstream search_summary;
+        search_summary << "Search completed: depth=" << (current_depth - 1) 
+                      << ", nodes=" << nodes_searched 
+                      << ", time=" << std::fixed << std::setprecision(3) << elapsed_time << "s"
+                      << ", nps=" << std::fixed << std::setprecision(0) << nodes_per_second;
+        g_logger.log(LogLevel::SEARCH, search_summary.str());
+        
+        return best_move;
+    }
+    
+    // Core negamax algorithm with alpha-beta pruning
+    float negamax(GameState& position, int depth, float alpha, float beta,
+                  bool isMaximizingPlayer, const std::string& player, Move& best_move) {
+        
+        nodes_searched++;
+        
+        // Check time constraint
+        if (nodes_searched % 1000 == 0 && timeManager.shouldStop()) {
+            return 0.0f;  // Return neutral score on timeout
+        }
+        
+        // Terminal node: evaluate position
+        if (depth == 0) {
+            bool isCircle = (player == "circle");
+            float score = evaluator->basicEvaluateBoard(position, isCircle);
+            return isMaximizingPlayer ? score : -score;
+        }
+        
+        // Check transposition table
+        uint64_t pos_hash = position.getHash();
+        Move tt_move;
+        float tt_score;
+        
+        if (tt.probe(pos_hash, depth, alpha, beta, tt_score, tt_move)) {
+            best_move = tt_move;
+            return tt_score;
+        }
+        
+        // Generate and order moves
+        int rows = position.getRows();
+        int cols = position.getCols();
+        const auto& score_cols = position.getScoreCols();
+        
+        // Convert position to format expected by MoveGenerator
+        std::vector<std::vector<std::map<std::string, std::string>>> board_map(rows,
+            std::vector<std::map<std::string, std::string>>(cols));
+        
+        // Simple conversion (can be optimized later)
+        for (int y = 0; y < rows; ++y) {
+            for (int x = 0; x < cols; ++x) {
+                uint8_t piece = position.getPiece(x, y);
+                if (piece != EMPTY) {
+                    board_map[y][x]["owner"] = isPieceOwner(piece, "circle") ? "circle" : "square";
+                    board_map[y][x]["side"] = isPieceStone(piece) ? "stone" : "river";
+                    if (!isPieceStone(piece)) {
+                        board_map[y][x]["orientation"] = isRiverHorizontal(piece) ? "horizontal" : "vertical";
+                    }
+                }
+            }
+        }
+        
+        const auto& moves = moveGenerator->generateAllMoves(board_map, player, rows, cols, score_cols, tt_move, true);
+        
+        if (moves.empty()) {
+            // No moves available - evaluate current position
+            bool isCircle = (player == "circle");
+            float score = evaluator->basicEvaluateBoard(position, isCircle);
+            return isMaximizingPlayer ? score : -score;
+        }
+        
+        float best_score = -10000.0f;
+        Move current_best_move = moves[0];  // Default to first move
+        TTEntry::Flag tt_flag = TTEntry::UPPER_BOUND;
+        
+        // Search all moves
+        for (const auto& move : moves) {
+            // Apply move to position
+            GameState next_pos = position;  // Copy
+            if (!applyMoveToGameState(next_pos, move)) continue;  // Skip invalid moves
+            
+            // Recursive search
+            Move dummy_move;
+            float score = -negamax(next_pos, depth - 1, -beta, -alpha,
+                                 !isMaximizingPlayer, 
+                                 (player == "circle") ? "square" : "circle", dummy_move);
+            
+            // Alpha-beta pruning
+            if (score >= beta) {
+                beta_cutoffs++;
+                // Store in transposition table
+                tt.store(pos_hash, depth, score, TTEntry::LOWER_BOUND, move);
+                best_move = move;
+                return score;  // Beta cutoff
+            }
+            
+            if (score > best_score) {
+                best_score = score;
+                current_best_move = move;
+                
+                if (score > alpha) {
+                    alpha = score;
+                    tt_flag = TTEntry::EXACT;
+                    alpha_cutoffs++;
+                }
+            }
+        }
+        
+        // Store result in transposition table
+        tt.store(pos_hash, depth, best_score, tt_flag, current_best_move);
+        best_move = current_best_move;
+        
+        return best_score;
+    }
+    
+    // Get search statistics
+    void getStatistics(size_t& nodes, size_t& alpha_cuts, size_t& beta_cuts, 
+                      float& tt_hit_rate, int& depth_reached) const {
+        nodes = nodes_searched;
+        alpha_cuts = alpha_cutoffs;
+        beta_cuts = beta_cutoffs;
+        tt_hit_rate = tt.getHitRate();
+        depth_reached = current_depth - 1;  // Last completed depth
+    }
+    
+    void clearCache() {
+        tt.clear();
+    }
+    
+private:
+    // Apply a move to GameState (simple implementation for now)
+    bool applyMoveToGameState(GameState& state, const Move& move) const {
+        int from_x = move.from[0], from_y = move.from[1];
+        int to_x = move.to[0], to_y = move.to[1];
+        
+        // Validate move bounds
+        if (from_x < 0 || from_x >= state.getCols() || from_y < 0 || from_y >= state.getRows() ||
+            to_x < 0 || to_x >= state.getCols() || to_y < 0 || to_y >= state.getRows()) {
+            return false;
+        }
+        
+        // Get piece at from position
+        uint8_t piece = state.getPiece(from_x, from_y);
+        if (piece == EMPTY) return false;
+        
+        // Simple move: remove from source, place at destination
+        state.setPiece(from_x, from_y, EMPTY);
+        state.setPiece(to_x, to_y, piece);
+        
+        // Update game hash (basic XOR update)
+        state.updateHashAfterMove(from_x, from_y, to_x, to_y, piece);
+        
+        return true;
+    }
+};
+
+// ==================== PHASE 5B: ITERATIVE DEEPENING ENHANCEMENT ====================
+
+// Enhanced MinimaxEngine with better time management and iterative deepening
+class AdvancedMinimaxEngine : public MinimaxEngine {
+private:
+    std::vector<Move> pv_line;           // Principal variation
+    std::vector<float> depth_scores;     // Score history by depth
+    bool aspiration_windows;             // Use aspiration window search
+    
+public:
+    AdvancedMinimaxEngine(BoardEvaluator* eval, MoveGenerator* movegen)
+        : MinimaxEngine(eval, movegen), aspiration_windows(true) {
+        pv_line.reserve(32);  // Reserve space for principal variation
+        depth_scores.reserve(16);
+    }
+    
+    // Enhanced iterative deepening with aspiration windows
+    Move getBestMoveAdvanced(GameState& position, const std::string& player,
+                            float time_limit, float opponent_time) {
+        
+        // Initialize search
+        timeManager.startSearch(time_limit, opponent_time);
+        nodes_searched = alpha_cutoffs = beta_cutoffs = 0;
+        pv_line.clear();
+        depth_scores.clear();
+        
+        // Log advanced search start
+        g_logger.log(LogLevel::SEARCH, "Starting advanced iterative deepening search");
+        
+        bool isCirclePlayer = (player == "circle");
+        Move best_move;
+        float best_score = -10000.0f;
+        float prev_score = 0.0f;
+        
+        // Iterative deepening with aspiration windows
+        for (current_depth = 1; current_depth <= max_depth; ++current_depth) {
+            if (timeManager.shouldStop()) {
+                g_logger.log(LogLevel::SEARCH, "Search stopped due to time limit at depth " + 
+                            std::to_string(current_depth));
+                break;
+            }
+            
+            g_logger.log(LogLevel::DEBUG, "Starting search at depth " + std::to_string(current_depth));
+            
+            float alpha = -10000.0f;
+            float beta = 10000.0f;
+            
+            // Use aspiration windows for deeper searches (depth 3+)
+            if (aspiration_windows && current_depth >= 3 && depth_scores.size() > 0) {
+                float window = 50.0f;  // Aspiration window size
+                alpha = prev_score - window;
+                beta = prev_score + window;
+            }
+            
+            // Search with aspiration window
+            GameState temp_pos = position;
+            float score = negamax(temp_pos, current_depth, alpha, beta,
+                                true, player, best_move);
+            
+            // Handle aspiration window failures
+            if (aspiration_windows && current_depth >= 3) {
+                if (score <= alpha) {
+                    // Research with lower bound
+                    temp_pos = position;
+                    score = negamax(temp_pos, current_depth, -10000.0f, beta,
+                                  true, player, best_move);
+                } else if (score >= beta) {
+                    // Research with upper bound  
+                    temp_pos = position;
+                    score = negamax(temp_pos, current_depth, alpha, 10000.0f,
+                                  true, player, best_move);
+                }
+            }
+            
+            // Update best move if search completed
+            if (!timeManager.shouldStop()) {
+                best_score = score;
+                depth_scores.push_back(score);
+                prev_score = score;
+                
+                // Early termination for forced wins/losses
+                if (std::abs(score) > 9000.0f) break;
+            }
+        }
+        
+        return best_move;
+    }
+    
+    // Get principal variation
+    const std::vector<Move>& getPrincipalVariation() const {
+        return pv_line;
+    }
+};
+
+
+// ==================== STUDENT AGENT ENGINE ====================
 class StudentAgent {
 private:
-    std::string side;           // Player side ("circle" or "square")
-    std::random_device rd;     // Random device
-    std::mt19937 gen;          // Random number generator
-    MoveGenerator moveGen;      // High-performance move generator
-    BoardEvaluator evaluator;   // Board evaluation system
+    std::string side;                    // Player side ("circle" or "square")
+    std::random_device rd;              // Random device
+    std::mt19937 gen;                   // Random number generator
+    MoveGenerator moveGen;               // High-performance move generator
+    BoardEvaluator evaluator;            // Board evaluation system
+    AdvancedMinimaxEngine* searchEngine; // Minimax search engine
+    GameState gameState;                 // Current game state representation
 
 public:
-    explicit StudentAgent(std::string side) : side(std::move(side)), gen(rd()) {}
+    explicit StudentAgent(std::string side) : side(std::move(side)), gen(rd()), gameState(5, 5) {
+        // Initialize search engine
+        searchEngine = new AdvancedMinimaxEngine(&evaluator, &moveGen);
+    }
+    
+    ~StudentAgent() {
+        delete searchEngine;
+    }
 
     Move choose(const std::vector<std::vector<std::map<std::string, std::string>>>& board, int row, int col, const std::vector<int>& score_cols, float current_player_time, float opponent_time) {
+        
+        // Start new move logging
+        g_logger.nextMove();
+        
         int rows = board.size();
         int cols = board[0].size();
+        
+        // Log move start
+        std::stringstream move_info;
+        move_info << "=== MOVE DECISION START === "
+                 << "Player: " << side << ", "
+                 << "Board: " << rows << "x" << cols << ", "
+                 << "Time: " << current_player_time << "s (vs " << opponent_time << "s)";
+        g_logger.log(LogLevel::DECISION, move_info.str());
 
-        // Use the new MoveGenerator for high-performance move generation
-        const auto& moves = moveGen.generateAllMoves(board, side, rows, cols, score_cols);
-
-        if (moves.empty()) {
-            return {"move", {0,0}, {0,0}, {}, ""}; // fallback
-        }
-
-        // Use evaluation-based move selection (improved from random)
-        bool isCirclePlayer = (side == "circle");
-        GameState gameState(rows, cols);
+        // Convert board to GameState for minimax search
+        gameState = GameState(rows, cols);
         gameState.loadFromPython(board);
         
+        std::string chosen_reasoning = "Minimax search";
+        
+        // Use minimax search to find best move
+        try {
+            Move bestMove = searchEngine->getBestMoveAdvanced(gameState, side, 
+                                                            current_player_time, opponent_time);
+            
+            // Validate the move is legal
+            const auto& moves = moveGen.generateAllMoves(board, side, rows, cols, score_cols);
+            for (const auto& move : moves) {
+                if (move == bestMove) {
+                    g_logger.logDecision(g_logger.moveToString(bestMove), chosen_reasoning);
+                    g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
+                    return bestMove;
+                }
+            }
+            
+            // Fallback: if minimax move is invalid, use first legal move
+            if (!moves.empty()) {
+                chosen_reasoning = "Minimax move invalid, using first legal move";
+                g_logger.log(LogLevel::ERROR, "Minimax returned invalid move, using fallback");
+                g_logger.logDecision(g_logger.moveToString(moves[0]), chosen_reasoning);
+                g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
+                return moves[0];
+            }
+        } catch (const std::exception& e) {
+            // Fallback to evaluation-based selection on any search error
+            chosen_reasoning = "Minimax failed with exception: " + std::string(e.what());
+            g_logger.log(LogLevel::ERROR, "Minimax search failed: " + std::string(e.what()));
+        } catch (...) {
+            chosen_reasoning = "Minimax failed with unknown exception";
+            g_logger.log(LogLevel::ERROR, "Minimax search failed with unknown exception");
+        }
+        
+        // FALLBACK: Use evaluation-based move selection  
+        g_logger.log(LogLevel::INFO, "Using evaluation-based fallback selection");
+        
+        const auto& moves = moveGen.generateAllMoves(board, side, rows, cols, score_cols);
+        if (moves.empty()) {
+            chosen_reasoning = "No legal moves available - emergency fallback";
+            g_logger.log(LogLevel::ERROR, "No legal moves found!");
+            g_logger.logDecision("emergency fallback", chosen_reasoning);
+            g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
+            return {"move", {0,0}, {0,0}, {}, ""}; // fallback
+        }
+        
+        bool isCirclePlayer = (side == "circle");
         Move bestMove = moves[0];
         float bestScore = -1000000.0f;
         
         // Evaluate each move and pick the best one
         for (const auto& move : moves) {
-            // Create a copy of the game state and apply the move
             GameState tempState = gameState;
-            
-            // Apply move to temporary state (simplified - real implementation would use proper move application)
-            // For now, just evaluate current position as baseline
             float score = evaluator.basicEvaluateBoard(tempState, isCirclePlayer);
             
             // Add small random factor for variety when moves are equally good
@@ -1535,6 +2509,11 @@ public:
                 bestMove = move;
             }
         }
+        
+        // Log final decision
+        chosen_reasoning = "Evaluation-based selection (score: " + std::to_string(bestScore) + ")";
+        g_logger.logDecision(g_logger.moveToString(bestMove), chosen_reasoning);
+        g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
         
         return bestMove;
     }
