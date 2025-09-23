@@ -1491,14 +1491,17 @@ public:
     
 private:
     
-    // Search at a specific depth using negamax
+    // CORRECTED searchAtDepth method
     SearchResult searchAtDepth(const GameState& position, int depth, bool isCirclePlayer, 
-                              const std::vector<Move>& rootMoves) {
+                            const std::vector<Move>& rootMoves) {
         
         SearchResult bestResult;
         bestResult.evaluation = -1000000.0f;  // Negative infinity
         bestResult.bestMove = rootMoves[0];   // Default move
         bestResult.depth_reached = depth;
+        
+        float alpha = -1000000.0f;  // Initialize alpha at root
+        float beta = 1000000.0f;    // Initialize beta at root
         
         for (const Move& move : rootMoves) {
             if (timeManager.shouldStop()) {
@@ -1512,13 +1515,21 @@ private:
                 continue;  // Invalid move, skip
             }
             
-            // Search this branch
-            float evaluation = -negamax(newPosition, depth - 1, -1000000.0f, 1000000.0f, !isCirclePlayer);
+            // Search this branch with current alpha-beta window
+            float evaluation = -negamax(newPosition, depth - 1, -beta, -alpha, !isCirclePlayer);
             
             // Update best move if this is better
             if (evaluation > bestResult.evaluation) {
                 bestResult.evaluation = evaluation;
                 bestResult.bestMove = move;
+            }
+            
+            // Update alpha for next root moves (critical for pruning!)
+            alpha = std::max(alpha, evaluation);
+            
+            // Beta cutoff at root level (though rare with initial beta=+infinity)
+            if (beta <= alpha) {
+                break;  // Remaining root moves can be pruned
             }
         }
         
