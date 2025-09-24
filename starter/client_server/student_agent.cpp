@@ -401,28 +401,66 @@ private:
     std::vector<int> score_cols;
     uint64_t hash_value;
     
+    // Position tracking sets for O(log n) operations
+    mutable std::set<std::pair<int,int>> circle_piece_positions;
+    mutable std::set<std::pair<int,int>> square_piece_positions;
+
     // Game constants (from gameEngine.py analysis)
     static constexpr int WIN_COUNT = 4;
     static constexpr int TOP_SCORE_ROW = 2;
     
     int getBottomScoreRow() const { return rows - 3; }
     
-    // Hash computation for transposition tables
-    void computeHash() {
-        hash_value = 0;
-        std::hash<uint64_t> hasher;
+    // // Hash computation for transposition tables
+    // void computeHash() {
+    //     hash_value = 0;
+    //     std::hash<uint64_t> hasher;
+        
+    //     for (int y = 0; y < rows; ++y) {
+    //         for (int x = 0; x < cols; ++x) {
+    //             if (board[y][x] != EMPTY) {
+    //                 // Zobrist-like hashing: position + piece type
+    //                 uint64_t piece_hash = (uint64_t(board[y][x]) << 16) | (uint64_t(y) << 8) | uint64_t(x);
+    //                 hash_value ^= hasher(piece_hash);
+    //             }
+    //         }
+    //     }
+    // }
+    
+    void addPiecePosition(int x, int y, uint8_t piece) {
+        if (piece == EMPTY) return;
+        std::pair<int,int> pos(x, y);
+        if (::isCircle(piece)) {
+            circle_piece_positions.insert(pos);
+        } else if (::isSquare(piece)) {
+            square_piece_positions.insert(pos);
+        }
+    }
+
+    void removePiecePosition(int x, int y, uint8_t piece) {
+        if (piece == EMPTY) return;
+        std::pair<int,int> pos(x, y);
+        if (::isCircle(piece)) {
+            circle_piece_positions.erase(pos);
+        } else if (::isSquare(piece)) {
+            square_piece_positions.erase(pos);
+        }
+    }
+
+    void initializePositionTracking() {
+        circle_piece_positions.clear();
+        square_piece_positions.clear();
         
         for (int y = 0; y < rows; ++y) {
             for (int x = 0; x < cols; ++x) {
-                if (board[y][x] != EMPTY) {
-                    // Zobrist-like hashing: position + piece type
-                    uint64_t piece_hash = (uint64_t(board[y][x]) << 16) | (uint64_t(y) << 8) | uint64_t(x);
-                    hash_value ^= hasher(piece_hash);
+                uint8_t piece = board[y][x];
+                if (piece != EMPTY) {
+                    addPiecePosition(x, y, piece);
                 }
             }
         }
     }
-    
+
 public:
     // Constructor
     GameState(int r, int c) : rows(r), cols(c) {
@@ -435,14 +473,22 @@ public:
             score_cols.push_back(i);
         }
         
-        computeHash();
+        initializePositionTracking();
+        // computeHash();
     }
-    
+
     // Fast copy constructor for minimax simulations
     GameState(const GameState& other) 
         : board(other.board), rows(other.rows), cols(other.cols), 
-          score_cols(other.score_cols), hash_value(other.hash_value) {}
+          score_cols(other.score_cols), //hash_value(other.hash_value),
+          circle_piece_positions(other.circle_piece_positions),
+          square_piece_positions(other.square_piece_positions) {}
     
+    // Deep copy for search tree
+    GameState clone() const {
+        return GameState(*this);
+    }
+
     // Assignment operator
     GameState& operator=(const GameState& other) {
         if (this != &other) {
@@ -450,11 +496,13 @@ public:
             rows = other.rows;
             cols = other.cols;
             score_cols = other.score_cols;
-            hash_value = other.hash_value;
+            // hash_value = other.hash_value;
+            circle_piece_positions = other.circle_piece_positions;
+            square_piece_positions = other.square_piece_positions;
         }
         return *this;
     }
-    
+  
     // Load from Python board format
     void loadFromPython(const std::vector<std::vector<std::map<std::string, std::string>>>& python_board) {
         for (int y = 0; y < rows && y < (int)python_board.size(); ++y) {
@@ -470,21 +518,9 @@ public:
                 }
             }
         }
-        computeHash();
+        // computeHash();
     }
-    
-    // Update hash incrementally after move (for efficiency)
-    void updateHashAfterMove(int from_x, int from_y, int to_x, int to_y, uint8_t piece) {
-        // XOR out old position, XOR in new position
-        hash_value ^= (uint64_t(piece) << (from_x + from_y * cols)) * 0x9e3779b97f4a7c15ULL;
-        hash_value ^= (uint64_t(piece) << (to_x + to_y * cols)) * 0x9e3779b97f4a7c15ULL;
-    }
-    
-    // Deep copy for search tree
-    GameState clone() const {
-        return GameState(*this);
-    }
-    
+
     // Accessors
     inline uint8_t getPiece(int x, int y) const { 
         return (inBounds(x, y)) ? board[y][x] : EMPTY; 
@@ -492,7 +528,10 @@ public:
     
     inline void setPiece(int x, int y, uint8_t piece) {
         if (inBounds(x, y)) {
+            uint8_t oldPiece = board[y][x];
+            removePiecePosition(x, y, oldPiece);
             board[y][x] = piece;
+            addPiecePosition(x, y, piece);
         }
     }
     
@@ -509,6 +548,15 @@ public:
     const std::vector<int>& getScoreCols() const { return score_cols; }
     uint64_t getHash() const { return hash_value; }
     
+    // Fast access to piece positions - O(1) access, O(log n) insert/delete
+    const std::set<std::pair<int,int>>& getCirclePiecePositions() const { return circle_piece_positions; }
+    const std::set<std::pair<int,int>>& getSquarePiecePositions() const { return square_piece_positions; }
+
+    // Get all player pieces - convenience method
+    const std::set<std::pair<int,int>>& getPlayerPiecePositions(bool isCircle) const {
+        return isCircle ? circle_piece_positions : square_piece_positions;
+    }
+
     // Check if position is opponent's scoring area
     bool isOpponentScoreCell(int x, int y, bool isCircle) const {
         auto it = std::find(score_cols.begin(), score_cols.end(), x);
@@ -570,36 +618,27 @@ public:
         return count;
     }
     
-    // Count all pieces of a player
+    // Count all pieces of a player - O(1) using position sets
     int countPlayerPieces(bool isCircle) const {
-        int count = 0;
-        for (int y = 0; y < rows; ++y) {
-            for (int x = 0; x < cols; ++x) {
-                uint8_t piece = board[y][x];
-                if (isCircle ? ::isCircle(piece) : ::isSquare(piece)) {
-                    count++;
-                }
-            }
-        }
-        return count;
+        return isCircle ? circle_piece_positions.size() : square_piece_positions.size();
     }
     
-    // Count stones specifically
+    // Count stones specifically - O(n) where n = number of player pieces (max 12)
     int countPlayerStones(bool isCircle) const {
         int count = 0;
-        uint8_t target = isCircle ? CIRCLE_STONE : SQUARE_STONE;
+        const auto& positions = isCircle ? circle_piece_positions : square_piece_positions;
         
-        for (int y = 0; y < rows; ++y) {
-            for (int x = 0; x < cols; ++x) {
-                if (board[y][x] == target) {
-                    count++;
-                }
+        for (const auto& pos : positions) {
+            uint8_t piece = board[pos.second][pos.first];
+            if (::isStone(piece)) {
+                count++;
             }
         }
         return count;
     }
     
     // Quick validation helpers
+
     bool isValidPosition(int x, int y) const {
         return inBounds(x, y);
     }
@@ -635,22 +674,45 @@ public:
     // Apply basic move (without validation for speed)
     void applyBasicMove(int from_x, int from_y, int to_x, int to_y) {
         if (inBounds(from_x, from_y) && inBounds(to_x, to_y)) {
-            board[to_y][to_x] = board[from_y][from_x];
+            uint8_t piece = board[from_y][from_x];
+            uint8_t displaced_piece = board[to_y][to_x];
+            
+            // Update position tracking
+            removePiecePosition(from_x, from_y, piece);
+            removePiecePosition(to_x, to_y, displaced_piece);
+            
+            board[to_y][to_x] = piece;
             board[from_y][from_x] = EMPTY;
-            computeHash();
+            
+            addPiecePosition(to_x, to_y, piece);
+            
+            // computeHash();
         }
     }
     
     // Apply push move
     void applyPushMove(int from_x, int from_y, int to_x, int to_y, int push_x, int push_y) {
         if (inBounds(from_x, from_y) && inBounds(to_x, to_y) && inBounds(push_x, push_y)) {
+            uint8_t our_piece = board[from_y][from_x];
+            uint8_t pushed_piece = board[to_y][to_x];
+            uint8_t displaced_piece = board[push_y][push_x];
+            
+            // Update position tracking
+            removePiecePosition(from_x, from_y, our_piece);
+            removePiecePosition(to_x, to_y, pushed_piece);
+            removePiecePosition(push_x, push_y, displaced_piece);
+            
             // Move pushed piece to push destination
-            board[push_y][push_x] = board[to_y][to_x];
+            board[push_y][push_x] = pushed_piece;
             // Move our piece to the intermediate position
-            board[to_y][to_x] = board[from_y][from_x];
+            board[to_y][to_x] = our_piece;
             // Clear original position
             board[from_y][from_x] = EMPTY;
-            computeHash();
+            
+            addPiecePosition(to_x, to_y, our_piece);
+            addPiecePosition(push_x, push_y, pushed_piece);
+            
+            // computeHash();
         }
     }
     
@@ -658,42 +720,58 @@ public:
     void applyFlip(int x, int y, const std::string& new_orientation = "horizontal") {
         if (!inBounds(x, y)) return;
         
-        uint8_t piece = board[y][x];
-        if (piece == EMPTY) return;
+        uint8_t old_piece = board[y][x];
+        if (old_piece == EMPTY) return;
         
-        bool isCircleOwner = ::isCircle(piece);
+        bool isCircleOwner = ::isCircle(old_piece);
+        uint8_t new_piece;
         
-        if (::isStone(piece)) {
+        if (::isStone(old_piece)) {
             // Stone -> River
             bool isHoriz = (new_orientation == "horizontal");
-            board[y][x] = isCircleOwner ? 
+            new_piece = isCircleOwner ? 
                 (isHoriz ? CIRCLE_RIVER_H : CIRCLE_RIVER_V) : 
                 (isHoriz ? SQUARE_RIVER_H : SQUARE_RIVER_V);
         } else {
             // River -> Stone
-            board[y][x] = isCircleOwner ? CIRCLE_STONE : SQUARE_STONE;
+            new_piece = isCircleOwner ? CIRCLE_STONE : SQUARE_STONE;
         }
-        computeHash();
+        
+        // Update position tracking (piece stays in same position but changes type)
+        removePiecePosition(x, y, old_piece);
+        board[y][x] = new_piece;
+        addPiecePosition(x, y, new_piece);
+        
+        // computeHash();
     }
     
     // Rotate river
     void applyRotate(int x, int y) {
         if (!inBounds(x, y)) return;
         
-        uint8_t piece = board[y][x];
-        if (!::isRiver(piece)) return;
+        uint8_t old_piece = board[y][x];
+        if (!::isRiver(old_piece)) return;
         
+        uint8_t new_piece;
         // Toggle orientation
-        if (piece == CIRCLE_RIVER_H) {
-            board[y][x] = CIRCLE_RIVER_V;
-        } else if (piece == CIRCLE_RIVER_V) {
-            board[y][x] = CIRCLE_RIVER_H;
-        } else if (piece == SQUARE_RIVER_H) {
-            board[y][x] = SQUARE_RIVER_V;
-        } else if (piece == SQUARE_RIVER_V) {
-            board[y][x] = SQUARE_RIVER_H;
+        if (old_piece == CIRCLE_RIVER_H) {
+            new_piece = CIRCLE_RIVER_V;
+        } else if (old_piece == CIRCLE_RIVER_V) {
+            new_piece = CIRCLE_RIVER_H;
+        } else if (old_piece == SQUARE_RIVER_H) {
+            new_piece = SQUARE_RIVER_V;
+        } else if (old_piece == SQUARE_RIVER_V) {
+            new_piece = SQUARE_RIVER_H;
+        } else {
+            return; // Invalid piece for rotation
         }
-        computeHash();
+        
+        // Update position tracking (piece stays in same position but changes orientation)
+        removePiecePosition(x, y, old_piece);
+        board[y][x] = new_piece;
+        addPiecePosition(x, y, new_piece);
+        
+        // computeHash();
     }
     
     // Debugging: print board state
@@ -706,8 +784,6 @@ public:
         }
     }
 };
-
-
 
 // ==================== MOVE REPRESENTATION ====================
 struct Move {
@@ -728,6 +804,11 @@ struct Move {
     bool operator==(const Move& other) const {
         return action == other.action && from == other.from && to == other.to && 
                pushed_to == other.pushed_to && orientation == other.orientation;
+    }
+    
+    // Inequality operator for comparison
+    bool operator!=(const Move& other) const {
+        return !(*this == other);
     }
 };
 
@@ -754,18 +835,25 @@ std::string AILogger::moveToString(const Move& move) const {
 class BoardEvaluator {
 private:
     // Evaluation caching for performance
-    mutable std::unordered_map<uint64_t, float> evaluation_cache;
+    // mutable std::unordered_map<uint64_t, float> evaluation_cache;
     
     // Performance optimization: pre-computed scoring area bounds
     struct ScoringArea {
-        int start_row = 0;
-        int end_row = 0;  // Inclusive bounds for scoring rows
+        int row = 0;  // Inclusive bounds for scoring rows
         std::vector<int> score_cols;  // Scoring columns
     };
     
     mutable ScoringArea circle_scoring;   // Circle's scoring area (bottom rows)
     mutable ScoringArea square_scoring;   // Square's scoring area (top rows)
     mutable bool scoring_areas_initialized = false;
+
+    float weight1 = 300.0f;
+    float weight2 = 100.0f; //<180 onwards
+    float weight3 = -80.0f;
+    float weight4 = 150.0f;
+    float weight5 = 200.0f;
+    float weight6 = 200.0f;
+    float weight7 = 200.0f;
     
     // Initialize scoring areas based on game configuration
     void initializeScoringAreas(const GameState& gameState) const {
@@ -775,13 +863,11 @@ private:
         const auto& score_cols = gameState.getScoreCols();
         
         // Circle scores in bottom rows (rows-3 to rows-1)
-        circle_scoring.start_row = rows - 3;
-        circle_scoring.end_row = rows - 1;
+        circle_scoring.row = rows - 3;
         circle_scoring.score_cols = score_cols;
         
         // Square scores in top rows (0 to 2)
-        square_scoring.start_row = 0;
-        square_scoring.end_row = 2;
+        square_scoring.row = 2;
         square_scoring.score_cols = score_cols;
         
         scoring_areas_initialized = true;
@@ -791,42 +877,96 @@ public:
     // ==================== PHASE 4A: CORE EVALUATION ====================
     
     // Main evaluation function - exact compatibility with Python basic_evaluate_board
-    float basicEvaluateBoard(const GameState& gameState, bool isCirclePlayer) const {
+    float EvaluateBoard(const GameState& gameState, bool isCirclePlayer) const {
+        initializeScoringAreas(gameState);
+
         // Check cache first
-        uint64_t hash = gameState.getHash();
-        uint64_t cache_key = hash ^ (isCirclePlayer ? 1ULL : 0ULL);  // Player-specific cache
+        // uint64_t hash = gameState.getHash();
+        // uint64_t cache_key = hash ^ (isCirclePlayer ? 1ULL : 0ULL);  // Player-specific cache
         
-        auto cache_it = evaluation_cache.find(cache_key);
-        if (cache_it != evaluation_cache.end()) {
-            return cache_it->second;
+        // auto cache_it = evaluation_cache.find(cache_key);
+        // if (cache_it != evaluation_cache.end()) {
+            //     return cache_it->second;
+            // }
+            
+            float score1 = computeBasicEvaluation(gameState, isCirclePlayer);
+            float score2 = evaluatePosition(gameState, isCirclePlayer);
+            float score3 = evaluateSafety(gameState, isCirclePlayer);
+            float score4 = evaluateMobility(gameState, isCirclePlayer);
+            
+            // Cache the result
+            // evaluation_cache[cache_key] = score;
+            float score = score1*weight1 + score2*weight2 + score3*weight3 + score4*weight4;
+            return score;
         }
         
-        float score = computeBasicEvaluation(gameState, isCirclePlayer);
+    // Core evaluation computation - mirrors Python basic_evaluate_board exactly
+    float computeBasicEvaluation(const GameState& gameState, bool isCirclePlayer) const {
         
-        // Cache the result
-        evaluation_cache[cache_key] = score;
+        float score = 0.0f;
+        
+        // Count stones in scoring areas (matches Python logic exactly)
+        int player_scoring_stones = countStonesInScoringArea(gameState, isCirclePlayer);
+        int opponent_scoring_stones = countStonesInScoringArea(gameState, !isCirclePlayer);
+        
+        score += player_scoring_stones * 1.0f;   // +100 per scoring stone
+        score -= opponent_scoring_stones * 1.0f; // -100 per opponent scoring stone
+
+        int player_scoring_Rivers = countRiversInScoringArea(gameState, isCirclePlayer);
+        int opponent_scoring_Rivers = countRiversInScoringArea(gameState, !isCirclePlayer);
+        
+        score += player_scoring_Rivers * 0.6f;   // +100 per scoring River
+        score -= opponent_scoring_Rivers * 0.6f; // -100 per opponent scoring River
+        
         return score;
-    }
-    
-    // ==================== PHASE 4B: EVALUATION SCAFFOLDS ====================
-    
-    // Material evaluation - piece counting and type analysis
-    float evaluateMaterial(const GameState& gameState, bool isCirclePlayer) const {
-        // TODO: Advanced material evaluation
-        // - Count stones vs rivers
-        // - Weight piece types differently
-        // - Consider piece positioning in material value
-        return 0.0f;  // Placeholder
     }
     
     // Position evaluation - territorial control and piece placement
     float evaluatePosition(const GameState& gameState, bool isCirclePlayer) const {
-        // TODO: Advanced positional evaluation  
-        // - Territory control metrics
-        // - Piece centralization
-        // - Distance to key squares
-        // - Formation analysis
-        return 0.0f;  // Placeholder
+        std::vector<int> player_distances = getDistancesFromScoringArea(gameState, isCirclePlayer);
+        // std::vector<int> opponent_distances = getDistancesFromScoringArea(gameState, !isCirclePlayer);
+        
+        auto calculatePositionScore = [](const std::vector<int>& distances) -> float {
+            float score = 0.0f;
+            
+            // Base score: sum of (25 - distance) for all pieces
+            for (int dist : distances) {
+                // Clamp distance to reasonable maximum to prevent negative scores
+                int clamped_dist = std::min(dist, 24);  // Max distance gives score of 1
+                score += (25.0f - clamped_dist);
+            }
+            
+            // Extra rewards for pieces marching towards closer values
+            // Bonus increases quadratically as pieces get closer
+            for (int dist : distances) {
+                if (dist <= 1) {
+                    score += 25.0f;  // Huge bonus for distance 1 (immediate threat)
+                }
+                else if (dist <= 3) {
+                    score += 10.0f;  // Large bonus for very close pieces
+                }
+                else if (dist <= 6) {
+                    score += 4.0f;   // Medium bonus for close pieces
+                }
+                else if (dist <= 10) {
+                    score += 2.0f;   // Small bonus for advancing pieces
+                }
+                // No extra bonus for very distant pieces (dist > 10)
+            }
+            
+            // Additional bonus for having multiple close pieces (clustering reward)
+            // int very_close_count = std::count_if(distances.begin(), distances.end(), 
+            //                                    [](int d) { return d <= 3; });
+            // if (very_close_count > 1) {
+            //     score += very_close_count * very_close_count * 5.0f;  // Quadratic clustering bonus
+            // }
+            return score;
+        };
+        
+        float player_score = calculatePositionScore(player_distances);
+        // float opponent_score = calculatePositionScore(opponent_distances);
+        
+        return (player_score)/300;
     }
     
     // Threat evaluation - immediate scoring opportunities
@@ -838,13 +978,15 @@ public:
         return 0.0f;  // Placeholder
     }
     
-    // Mobility evaluation - move flexibility assessment
+    // Mobility evaluation - stones adjacent to rivers have higher mobility
     float evaluateMobility(const GameState& gameState, bool isCirclePlayer) const {
-        // TODO: Mobility evaluation
-        // - Available move count
-        // - Quality of available moves
-        // - Piece coordination potential
-        return 0.0f;  // Placeholder
+        // Count my stones adjacent to any river
+        int my_mobile_stones = countStonesAdjacentToRivers(gameState, isCirclePlayer);
+        
+        // Count opponent stones adjacent to any river
+        int opponent_mobile_stones = countStonesAdjacentToRivers(gameState, !isCirclePlayer);
+        
+        return static_cast<float>(my_mobile_stones - opponent_mobile_stones);
     }
     
     // River control evaluation - strategic river placement
@@ -856,54 +998,21 @@ public:
         return 0.0f;  // Placeholder
     }
     
-    // Safety evaluation - piece vulnerability analysis
+    // Safety evaluation - open positions around scoring areas
     float evaluateSafety(const GameState& gameState, bool isCirclePlayer) const {
-        // TODO: Safety evaluation
-        // - Pieces under attack
-        // - Defensive formations
-        // - Escape route analysis
-        return 0.0f;  // Placeholder
-    }
-    
-    // ==================== PHASE 4A: IMPLEMENTATION DETAILS ====================
-    
-private:
-    // Core evaluation computation - mirrors Python basic_evaluate_board exactly
-    float computeBasicEvaluation(const GameState& gameState, bool isCirclePlayer) const {
         initializeScoringAreas(gameState);
         
-        float score = 0.0f;
-        int rows = gameState.getRows();
-        int cols = gameState.getCols();
+        // Count open positions around opponent's scoring area
+        // int opponent_open_sides = countOpenSidesAroundScoringArea(gameState, !isCirclePlayer);
         
-        // Count stones in scoring areas (matches Python logic exactly)
-        int player_scoring_stones = countStonesInScoringArea(gameState, isCirclePlayer);
-        int opponent_scoring_stones = countStonesInScoringArea(gameState, !isCirclePlayer);
+        // Count open positions around my scoring area
+        int my_open_sides = countOpenSidesAroundScoringArea(gameState, isCirclePlayer);
         
-        score += player_scoring_stones * 100.0f;   // +100 per scoring stone
-        score -= opponent_scoring_stones * 100.0f; // -100 per opponent scoring stone
-        
-        // Positional scoring for all player stones (matches Python logic)
-        for (int y = 0; y < rows; ++y) {
-            for (int x = 0; x < cols; ++x) {
-                if (gameState.isEmpty(x, y)) continue;
-                
-                // Check if this is a player's stone
-                if (gameState.isPlayerPiece(x, y, isCirclePlayer) && 
-                    gameState.getPieceType(x, y) == "stone") {
-                    
-                    // Basic positional scoring (matches Python exactly)
-                    if (isCirclePlayer) {
-                        score += (rows - y) * 0.1f;  // Circle prefers bottom
-                    } else {
-                        score += y * 0.1f;           // Square prefers top
-                    }
-                }
-            }
-        }
-        
-        return score;
+        return (my_open_sides)/3.0f;
     }
+    
+
+private:
     
     // Count stones in scoring area - helper function
     int countStonesInScoringArea(const GameState& gameState, bool isCirclePlayer) const {
@@ -911,31 +1020,187 @@ private:
         const ScoringArea& area = isCirclePlayer ? circle_scoring : square_scoring;
         
         // Check all positions in the scoring area
-        for (int y = area.start_row; y <= area.end_row; ++y) {
-            for (int col : area.score_cols) {
-                if (gameState.inBounds(col, y) &&
-                    gameState.isPlayerPiece(col, y, isCirclePlayer) &&
-                    gameState.getPieceType(col, y) == "stone") {
-                    count++;
-                }
+        for (int col : area.score_cols) {
+            if (gameState.inBounds(col,area.row) &&
+                gameState.isPlayerPiece(col,area.row, isCirclePlayer) &&
+                gameState.getPieceType(col,area.row) == "stone") {
+                count++;
+            }
+        }
+        
+        return count;
+    }
+    // Count stones in scoring area - helper function
+    int countRiversInScoringArea(const GameState& gameState, bool isCirclePlayer) const {
+        int count = 0;
+        const ScoringArea& area = isCirclePlayer ? circle_scoring : square_scoring;
+        
+        // Check all positions in the scoring area
+        for (int col : area.score_cols) {
+            if (gameState.inBounds(col,area.row) &&
+                gameState.isPlayerPiece(col,area.row, isCirclePlayer) &&
+                gameState.getPieceType(col,area.row) == "river") {
+                count++;
             }
         }
         
         return count;
     }
     
-public:
-    // Clear evaluation cache (useful for testing)
-    void clearCache() const {
-        evaluation_cache.clear();
+    // Calculate distances from scoring area for all player pieces
+    // Returns list of minimum Manhattan distances to any of the 4 scoring cells
+    std::vector<int> getDistancesFromScoringArea(const GameState& gameState, bool isCirclePlayer) const {        
+        
+        std::vector<int> distances;
+        const ScoringArea& area = isCirclePlayer ? circle_scoring : square_scoring;
+        
+        // Get all player piece positions using optimized position sets
+        const auto& player_positions = gameState.getPlayerPiecePositions(isCirclePlayer);
+        
+        // Calculate distance for each piece
+        for (const auto& piece_pos : player_positions) {
+            int piece_x = piece_pos.first;
+            int piece_y = piece_pos.second;
+            
+            int min_distance = INT_MAX;
+            
+            // Check distance to each of the 4 scoring cells
+            for (int score_col : area.score_cols) {
+                int score_x = score_col;
+                int score_y = area.row;
+                
+                // Manhattan distance = |x1 - x2| + |y1 - y2|
+                int manhattan_dist = abs(piece_x - score_x) + abs(piece_y - score_y);
+                min_distance = std::min(min_distance, manhattan_dist);
+            }
+            
+            if(min_distance!=0){distances.push_back(min_distance);}
+        }
+        
+        return distances;
     }
     
-    // Get cache statistics (for performance monitoring)
-    size_t getCacheSize() const {
-        return evaluation_cache.size();
+    // Count open positions around a player's scoring area
+    int countOpenSidesAroundScoringArea(const GameState& gameState, bool isCirclePlayer) const {
+        const ScoringArea& area = isCirclePlayer ? circle_scoring : square_scoring;
+        int open_count = 0;
+        
+        // Check all 10 positions around the 4×1 scoring area:
+        // 8 positions above and below + 2 positions on the sides
+        
+        // Check positions above and below the scoring area (8 positions)
+        for (int col : area.score_cols) {
+            int score_x = col;
+            int score_y = area.row;
+            
+            // Position above scoring area
+            int above_y = score_y - 1;
+            if (gameState.inBounds(score_x, above_y)) {
+                if (isPositionOpen(gameState, score_x, above_y, true)) { // true = checking vertical flow
+                    open_count++;
+                }
+            }
+            
+            // Position below scoring area  
+            int below_y = score_y + 1;
+            if (gameState.inBounds(score_x, below_y)) {
+                if (isPositionOpen(gameState, score_x, below_y, true)) { // true = checking vertical flow
+                    open_count++;
+                }
+            }
+        }
+        
+        // Check positions on the sides of the scoring area (2 positions)
+        int leftmost_col = *std::min_element(area.score_cols.begin(), area.score_cols.end());
+        int rightmost_col = *std::max_element(area.score_cols.begin(), area.score_cols.end());
+        
+        // Left side position
+        int left_x = leftmost_col - 1;
+        if (gameState.inBounds(left_x, area.row)) {
+            if (isPositionOpen(gameState, left_x, area.row, false)) { // false = checking horizontal flow
+                open_count++;
+            }
+        }
+        
+        // Right side position
+        int right_x = rightmost_col + 1;
+        if (gameState.inBounds(right_x, area.row)) {
+            if (isPositionOpen(gameState, right_x, area.row, false)) { // false = checking horizontal flow
+                open_count++;
+            }
+        }
+        
+        return open_count;
+    }
+    
+    // Check if a position is "open" (empty or has appropriate river orientation)
+    bool isPositionOpen(const GameState& gameState, int x, int y, bool checkingVerticalFlow) const {
+        uint8_t piece = gameState.getPiece(x, y);
+        
+        // Empty cell is always open
+        if (piece == EMPTY) {
+            return true;
+        }
+        
+        // If there's a river, check if it allows the right kind of flow
+        if (::isRiver(piece)) {
+            if (checkingVerticalFlow) {
+                // For vertical flow (above/below positions), we need vertical rivers
+                return ::isVertical(piece);
+            } else {
+                // For horizontal flow (side positions), we need horizontal rivers
+                return ::isHorizontal(piece);
+            }
+        }
+        
+        // Solid pieces (stones) block flow
+        return false;
+    }
+    
+    // Count stones adjacent to any river (for mobility evaluation)
+    int countStonesAdjacentToRivers(const GameState& gameState, bool isCirclePlayer) const {
+        int mobile_stone_count = 0;
+        const auto& player_positions = gameState.getPlayerPiecePositions(isCirclePlayer);
+        
+        // Check each player piece
+        for (const auto& pos : player_positions) {
+            int x = pos.first;
+            int y = pos.second;
+            uint8_t piece = gameState.getPiece(x, y);
+            
+            // Only count stones (not rivers)
+            if (!::isStone(piece)) continue;
+            
+            // Check if this stone is adjacent to any river (in 4 directions)
+            bool is_adjacent_to_river = false;
+            
+            // Check all 4 adjacent directions: up, down, left, right
+            static const int dx[] = {0, 0, -1, 1};
+            static const int dy[] = {-1, 1, 0, 0};
+            
+            for (int dir = 0; dir < 4; ++dir) {
+                int adj_x = x + dx[dir];
+                int adj_y = y + dy[dir];
+                
+                if (gameState.inBounds(adj_x, adj_y)) {
+                    uint8_t adj_piece = gameState.getPiece(adj_x, adj_y);
+                    
+                    // If adjacent cell contains any river (regardless of owner), this stone is mobile
+                    if (::isRiver(adj_piece)) {
+                        is_adjacent_to_river = true;
+                        break;  // Found at least one adjacent river, no need to check other directions
+                    }
+                }
+            }
+            
+            if (is_adjacent_to_river) {
+                mobile_stone_count++;
+            }
+        }
+        
+        return mobile_stone_count;
     }
 };
-
 // ==================== MOVE GENERATION ENGINE ====================
 
 class MoveGenerator {
@@ -1402,13 +1667,13 @@ private:
         // Basic time allocation strategy
         if (remaining_time > 30.0f) {
             // Early/mid game: use moderate time
-            return std::min(5.0f, usable_time * 0.15f);
+            return std::min(3.0f, usable_time * 0.15f);
         } else if (remaining_time > 10.0f) {
             // Late game: be more aggressive with time usage
-            return std::min(8.0f, usable_time * 0.25f);
+            return std::min(6.0f, usable_time * 0.25f);
         } else {
             // Endgame: use most remaining time but keep emergency reserve
-            return std::min(remaining_time * 0.7f, usable_time);
+            return std::min(remaining_time * 0.5f, usable_time);
         }
     }
 };
@@ -1430,30 +1695,28 @@ struct SearchResult {
 // ==================== TRANSPOSITION TABLE ====================
 
 struct TTEntry {
-    uint64_t hash_key;
     float evaluation;
     Move best_move;
     int depth;
-    int age;
     enum NodeType {
         EXACT = 0,
         LOWER_BOUND = 1,
         UPPER_BOUND = 2
     } node_type;
     
-    TTEntry() : hash_key(0), evaluation(0.0f), depth(-1), age(0), node_type(EXACT) {}
+    TTEntry() : evaluation(0.0f), depth(-1), node_type(EXACT) {}
+    TTEntry(float eval, const Move& move, int d, NodeType type) 
+        : evaluation(eval), best_move(move), depth(d), node_type(type) {}
 };
 
 class TranspositionTable {
 private:
-    static constexpr size_t TABLE_SIZE = 1024 * 256;  // 256K entries
-    static constexpr size_t TABLE_MASK = TABLE_SIZE - 1;
-    static constexpr int MAX_BOARD_SIZE = 20;  // Reasonable max for our game
+    static constexpr size_t MAX_TABLE_SIZE = 500000;  // 500K entries max
+    static constexpr int MAX_BOARD_SIZE = 20;
     
-    std::vector<TTEntry> table;
-    int current_age;
+    std::unordered_map<uint64_t, TTEntry> table;
     
-    // Zobrist hash tables (integrated minimal implementation)
+    // Zobrist hash tables (minimal implementation)
     static uint64_t piece_square_table[7][MAX_BOARD_SIZE][MAX_BOARD_SIZE];
     static uint64_t player_to_move_key;
     static bool zobrist_initialized;
@@ -1478,19 +1741,20 @@ private:
     }
     
 public:
-    TranspositionTable() : current_age(0) {
-        table.resize(TABLE_SIZE);
+    TranspositionTable() {
         initializeZobrist();
-        clear();
+        table.reserve(MAX_TABLE_SIZE);
     }
     
     void clear() {
-        std::fill(table.begin(), table.end(), TTEntry{});
-        current_age++;
+        table.clear();
     }
     
     void newSearch() {
-        current_age++;
+        // Optionally clear old entries if table gets too large
+        if (table.size() > MAX_TABLE_SIZE) {
+            table.clear();
+        }
     }
     
     // Compute Zobrist hash for a game state
@@ -1519,14 +1783,12 @@ public:
     bool probe(uint64_t hash_key, int depth, float alpha, float beta, 
                float& evaluation, Move& best_move) const {
         
-        size_t index = hash_key & TABLE_MASK;
-        const TTEntry& entry = table[index];
-        
-        // Check if entry is valid and matches our position
-        if (entry.hash_key != hash_key || entry.depth < depth) {
+        auto it = table.find(hash_key);
+        if (it == table.end() || it->second.depth < depth) {
             return false;
         }
         
+        const TTEntry& entry = it->second;
         best_move = entry.best_move;
         
         // Check if we can use this evaluation based on node type
@@ -1557,9 +1819,6 @@ public:
     void store(uint64_t hash_key, float evaluation, const Move& best_move, 
                int depth, float original_alpha, float beta) {
         
-        size_t index = hash_key & TABLE_MASK;
-        TTEntry& entry = table[index];
-        
         // Determine node type
         TTEntry::NodeType node_type;
         if (evaluation <= original_alpha) {
@@ -1570,20 +1829,16 @@ public:
             node_type = TTEntry::EXACT;
         }
         
-        // Replace if empty, deeper, or much older
-        bool should_replace = (entry.hash_key == 0) ||
-                             (entry.depth <= depth) ||
-                             (entry.age < current_age - 2);
-        
-        if (should_replace) {
-            entry.hash_key = hash_key;
-            entry.evaluation = evaluation;
-            entry.best_move = best_move;
-            entry.depth = depth;
-            entry.node_type = node_type;
-            entry.age = current_age;
+        // Check if we should replace existing entry
+        auto it = table.find(hash_key);
+        if (it == table.end() || it->second.depth <= depth) {
+            // Insert or replace with deeper search
+            table[hash_key] = TTEntry(evaluation, best_move, depth, node_type);
         }
     }
+    
+    // Get table statistics
+    size_t size() const { return table.size(); }
 };
 
 // Static member definitions
@@ -1602,9 +1857,15 @@ private:
     int nodes_searched;
     int max_depth_reached;
     
+    // Principal Variation storage - stores best moves from previous iteration
+    // pv_moves[depth][position_hash] = best_move
+    std::vector<std::unordered_map<uint64_t, Move>> pv_moves;
+    
 public:
     MinimaxEngine(BoardEvaluator* eval, MoveGenerator* moveGen) 
-        : evaluator(eval), moveGenerator(moveGen), nodes_searched(0), max_depth_reached(0) {}
+        : evaluator(eval), moveGenerator(moveGen), nodes_searched(0), max_depth_reached(0) {
+        pv_moves.resize(10);  // Support up to depth 10
+    }
     
     // Main entry point: find best move using iterative deepening
     Move getBestMove(const GameState& position, const std::string& player, 
@@ -1616,6 +1877,9 @@ public:
         // Initialize TT for new search
         tt.newSearch();
         
+        // Clear PV moves from previous search
+        clearPVMoves();
+        
         // Reset search statistics
         nodes_searched = 0;
         max_depth_reached = 0;
@@ -1623,15 +1887,23 @@ public:
         // Convert player string to boolean for consistency
         bool isCirclePlayer = (player == "circle");
         
+        g_logger.log(LogLevel::DEBUG, "MINIMAX: Starting search for " + player + 
+                    ", time=" + std::to_string(remaining_time) + "s");
+        
         // Get all legal moves for the root position
         std::vector<Move> rootMoves = generateMovesForPosition(position, player);
         
+        g_logger.log(LogLevel::DEBUG, "MINIMAX: Found " + std::to_string(rootMoves.size()) + 
+                    " legal moves at root");
+        
         if (rootMoves.empty()) {
+            g_logger.log(LogLevel::ERROR, "MINIMAX: No legal moves available!");
             // No legal moves - return a default move
             return {"move", {0,0}, {0,0}, {}, ""};
         }
         
         if (rootMoves.size() == 1) {
+            g_logger.log(LogLevel::INFO, "MINIMAX: Only one legal move, skipping search");
             // Only one legal move - no need to search
             return rootMoves[0];
         }
@@ -1640,24 +1912,117 @@ public:
         SearchResult bestResult;
         bestResult.bestMove = rootMoves[0];  // Default to first legal move
         
+        g_logger.log(LogLevel::DEBUG, "MINIMAX: Starting iterative deepening");
+        
         for (int depth = 1; depth <= 6; ++depth) {  // Maximum depth of 6
-            if (timeManager.shouldStop()) break;
+            if (timeManager.shouldStop()) {
+                g_logger.log(LogLevel::DEBUG, "MINIMAX: Time limit reached at depth " + std::to_string(depth));
+                break;
+            }
+            
+            g_logger.log(LogLevel::DEBUG, "MINIMAX: Searching at depth " + std::to_string(depth));
+            int nodes_before = nodes_searched;
             
             SearchResult currentResult = searchAtDepth(position, depth, isCirclePlayer, rootMoves);
             
+            int nodes_at_depth = nodes_searched - nodes_before;
+            g_logger.log(LogLevel::DEBUG, "MINIMAX: Depth " + std::to_string(depth) + 
+                        " completed, nodes=" + std::to_string(nodes_at_depth) + 
+                        ", eval=" + std::to_string(currentResult.evaluation) +
+                        ", move=" + currentResult.bestMove.action);
+            
             if (!currentResult.timeout_occurred) {
+                if (bestResult.bestMove != currentResult.bestMove) {
+                    g_logger.log(LogLevel::INFO, "MINIMAX: Best move changed from " + 
+                                bestResult.bestMove.action + " to " + currentResult.bestMove.action +
+                                " (eval: " + std::to_string(bestResult.evaluation) + " -> " + 
+                                std::to_string(currentResult.evaluation) + ")");
+                }
                 bestResult = currentResult;
                 max_depth_reached = depth;
             }
             
             // If we found a very good position, don't waste more time
-            if (bestResult.evaluation > 50.0f) break;
+            if (bestResult.evaluation > 100000.0f) {
+                g_logger.log(LogLevel::DEBUG, "MINIMAX: Found winning position, stopping early");
+                break;
+            }
         }
+        
+        g_logger.log(LogLevel::INFO, "MINIMAX: Search complete - depth=" + std::to_string(max_depth_reached) +
+                    ", nodes=" + std::to_string(nodes_searched) + 
+                    ", TT_size=" + std::to_string(tt.size()) +
+                    ", time=" + std::to_string(timeManager.getElapsedTime()) + "s");
         
         return bestResult.bestMove;
     }
     
 private:
+    
+    // ========== PRINCIPAL VARIATION HELPER METHODS ==========
+    
+    // Get PV move for a position at a specific depth from previous iteration
+    Move getPVMove(uint64_t position_hash, int depth) const {
+        if (depth >= 0 && depth < pv_moves.size()) {
+            auto it = pv_moves[depth].find(position_hash);
+            if (it != pv_moves[depth].end()) {
+                return it->second;
+            }
+        }
+        return Move();  // Return empty move if not found
+    }
+    
+    // Store PV move for a position at a specific depth
+    void storePVMove(uint64_t position_hash, int depth, const Move& move) {
+        if (depth >= 0 && depth < pv_moves.size()) {
+            pv_moves[depth][position_hash] = move;
+        }
+    }
+    
+    // Clear PV moves for new search
+    void clearPVMoves() {
+        for (auto& pv_map : pv_moves) {
+            pv_map.clear();
+        }
+    }
+    
+    // Order moves using PV from previous iteration
+    std::vector<Move> orderMovesWithPV(const std::vector<Move>& moves, uint64_t position_hash, 
+                                      int current_depth) const {
+        if (moves.empty()) return moves;
+        
+        std::vector<Move> ordered_moves = moves;
+        
+        // Get PV move from previous iteration at this depth
+        Move pv_move = getPVMove(position_hash, current_depth);
+        
+        if (!pv_move.action.empty()) {
+            // Find PV move in current moves and move to front
+            auto it = std::find(ordered_moves.begin(), ordered_moves.end(), pv_move);
+            if (it != ordered_moves.end()) {
+                std::swap(*it, ordered_moves[0]);
+                g_logger.log(LogLevel::DEBUG, "MINIMAX: Using PV move at depth " + 
+                            std::to_string(current_depth) + ": " + pv_move.action);
+                return ordered_moves;
+            }
+        }
+        
+        // If no PV move found, try TT move ordering as fallback
+        Move tt_move;
+        float dummy_eval;
+        if (tt.probe(position_hash, current_depth, -1000000.0f, 1000000.0f, dummy_eval, tt_move)) {
+            if (!tt_move.action.empty()) {
+                auto it = std::find(ordered_moves.begin(), ordered_moves.end(), tt_move);
+                if (it != ordered_moves.end()) {
+                    std::swap(*it, ordered_moves[0]);
+                    g_logger.log(LogLevel::DEBUG, "MINIMAX: Using TT move at depth " + 
+                                std::to_string(current_depth) + ": " + tt_move.action);
+                }
+            }
+        }
+        
+        return ordered_moves;
+    }
     
     // CORRECTED searchAtDepth method
     SearchResult searchAtDepth(const GameState& position, int depth, bool isCirclePlayer, 
@@ -1670,21 +2035,38 @@ private:
         
         float alpha = -1000000.0f;  // Initialize alpha at root
         float beta = 1000000.0f;    // Initialize beta at root
+        int moves_evaluated = 0;
+        int cutoffs = 0;
         
-        for (const Move& move : rootMoves) {
+        // Order root moves using PV from previous iteration
+        uint64_t root_hash = tt.computeHash(position, isCirclePlayer);
+        std::vector<Move> orderedMoves = orderMovesWithPV(rootMoves, root_hash, 0);
+        
+        g_logger.log(LogLevel::DEBUG, "MINIMAX: Ordered " + std::to_string(orderedMoves.size()) + 
+                    " root moves for depth " + std::to_string(depth));
+        
+        for (const Move& move : orderedMoves) {
             if (timeManager.shouldStop()) {
                 bestResult.timeout_occurred = true;
+                g_logger.log(LogLevel::DEBUG, "MINIMAX: Timeout at root level after " + 
+                            std::to_string(moves_evaluated) + "/" + std::to_string(rootMoves.size()) + " moves");
                 break;
             }
             
             // Apply move to get new position
             GameState newPosition = position.clone();
             if (!applyMoveToPosition(newPosition, move)) {
+                g_logger.log(LogLevel::DEBUG, "MINIMAX: Invalid root move skipped: " + move.action);
                 continue;  // Invalid move, skip
             }
             
+            moves_evaluated++;
+            
             // Search this branch with current alpha-beta window
-            float evaluation = -negamax(newPosition, depth - 1, -beta, -alpha, !isCirclePlayer);
+            float evaluation = -negamax(newPosition, depth - 1, -beta, -alpha, !isCirclePlayer, 1);
+            
+            g_logger.log(LogLevel::DEBUG, "MINIMAX: Root move " + std::to_string(moves_evaluated) + 
+                        ": " + move.action + " eval=" + std::to_string(evaluation));
             
             // Update best move if this is better
             if (evaluation > bestResult.evaluation) {
@@ -1693,19 +2075,33 @@ private:
             }
             
             // Update alpha for next root moves (critical for pruning!)
+            float old_alpha = alpha;
             alpha = std::max(alpha, evaluation);
+            
+            if (alpha > old_alpha) {
+                g_logger.log(LogLevel::DEBUG, "MINIMAX: Alpha improved at root: " + 
+                            std::to_string(old_alpha) + " -> " + std::to_string(alpha));
+            }
             
             // Beta cutoff at root level (though rare with initial beta=+infinity)
             if (beta <= alpha) {
+                cutoffs++;
+                g_logger.log(LogLevel::DEBUG, "MINIMAX: Root beta cutoff! Remaining " + 
+                            std::to_string(rootMoves.size() - moves_evaluated) + " moves pruned");
                 break;  // Remaining root moves can be pruned
             }
         }
         
+        g_logger.log(LogLevel::DEBUG, "MINIMAX: Root search complete - evaluated=" + 
+                    std::to_string(moves_evaluated) + "/" + std::to_string(rootMoves.size()) + 
+                    ", cutoffs=" + std::to_string(cutoffs));
+        
         return bestResult;
     }
     
-    // Negamax algorithm with alpha-beta pruning and TT
-    float negamax(const GameState& position, int depth, float alpha, float beta, bool isCirclePlayer) {
+    // Negamax algorithm with alpha-beta pruning, TT, and PV storage
+    float negamax(const GameState& position, int depth, float alpha, float beta, bool isCirclePlayer, 
+                  int current_depth = 0) {
         nodes_searched++;
         
         // Check for timeout
@@ -1720,12 +2116,17 @@ private:
         float tt_evaluation;
         Move tt_best_move;
         if (tt.probe(position_hash, depth, alpha, beta, tt_evaluation, tt_best_move)) {
+            if (depth >= 3) {  // Only log for deeper searches to avoid spam
+                g_logger.log(LogLevel::DEBUG, "MINIMAX: TT HIT at depth " + std::to_string(depth) + 
+                            ", eval=" + std::to_string(tt_evaluation) + 
+                            ", move=" + tt_best_move.action);
+            }
             return tt_evaluation;
         }
         
         // Terminal conditions
         if (depth == 0) {
-            float evaluation = evaluator->basicEvaluateBoard(position, isCirclePlayer);
+            float evaluation = evaluator->EvaluateBoard(position, isCirclePlayer);
             // Store leaf evaluation in TT
             Move dummy_move;
             tt.store(position_hash, evaluation, dummy_move, depth, alpha, beta);
@@ -1754,19 +2155,15 @@ private:
             return evaluation;
         }
         
-        // Move ordering: try TT best move first
-        if (!tt_best_move.action.empty()) {
-            auto it = std::find(moves.begin(), moves.end(), tt_best_move);
-            if (it != moves.end()) {
-                std::swap(*it, moves[0]);
-            }
-        }
+        // Order moves using PV from previous iteration + TT move
+        std::vector<Move> orderedMoves = orderMovesWithPV(moves, position_hash, current_depth);
         
         float maxEval = -1000000.0f;
-        Move best_move = moves[0];  // Default best move
+        Move best_move = orderedMoves[0];  // Default best move
         float original_alpha = alpha;
         
-        for (const Move& move : moves) {
+        int moves_tried = 0;
+        for (const Move& move : orderedMoves) {
             if (timeManager.shouldStop()) break;
             
             // Apply move
@@ -1775,23 +2172,39 @@ private:
                 continue;  // Invalid move
             }
             
+            moves_tried++;
+            
             // Recursive search
-            float evaluation = -negamax(newPosition, depth - 1, -beta, -alpha, !isCirclePlayer);
+            float evaluation = -negamax(newPosition, depth - 1, -beta, -alpha, !isCirclePlayer, current_depth + 1);
             
             if (evaluation > maxEval) {
                 maxEval = evaluation;
                 best_move = move;
+                if (depth >= 4) {  // Log best move changes at deeper levels
+                    g_logger.log(LogLevel::DEBUG, "MINIMAX: New best at depth " + std::to_string(depth) +
+                                ", move=" + move.action + ", eval=" + std::to_string(evaluation));
+                }
             }
             
             alpha = std::max(alpha, evaluation);
             
             if (beta <= alpha) {
+                if (depth >= 3) {  // Log cutoffs at deeper levels
+                    g_logger.log(LogLevel::DEBUG, "MINIMAX: Beta cutoff at depth " + std::to_string(depth) +
+                                ", move " + std::to_string(moves_tried) + "/" + std::to_string(moves.size()) +
+                                ", alpha=" + std::to_string(alpha) + ", beta=" + std::to_string(beta));
+                }
                 break;  // Alpha-beta cutoff
             }
         }
         
         // Store result in transposition table
         tt.store(position_hash, maxEval, best_move, depth, original_alpha, beta);
+        
+        // Store PV move if we have a best move
+        if (!best_move.action.empty()) {
+            storePVMove(position_hash, current_depth, best_move);
+        }
         
         return maxEval;
     }
@@ -2014,7 +2427,7 @@ public:
         // Evaluate each move and pick the best one
         for (const auto& move : moves) {
             GameState tempState = gameState;
-            float score = evaluator.basicEvaluateBoard(tempState, isCirclePlayer);
+            float score = evaluator.EvaluateBoard(tempState, isCirclePlayer);
             
             // Add small random factor for variety when moves are equally good
             std::uniform_real_distribution<float> random_factor(-0.01f, 0.01f);
@@ -2162,90 +2575,6 @@ public:
         
         std::cout << "\n🎉 PHASE 3 TESTS COMPLETED! 🎉\n";
         std::cout << "==============================\n\n";
-    }
-
-    // Test BoardEvaluator functionality
-    void testBoardEvaluator() {
-        std::cout << "\n📊 TESTING BOARD EVALUATOR 📊\n";
-        std::cout << "===============================\n";
-        
-        // Create test scenarios
-        GameState gameState(7, 7);
-        std::vector<int> score_cols = {0, 1, 2, 3, 4, 5, 6};
-        
-        std::cout << "Test 1: Basic Evaluation\n";
-        
-        // Test empty board evaluation
-        float empty_score_circle = evaluator.basicEvaluateBoard(gameState, true);
-        float empty_score_square = evaluator.basicEvaluateBoard(gameState, false);
-        
-        std::cout << "✓ Empty board evaluation (circle): " << empty_score_circle << "\n";
-        std::cout << "✓ Empty board evaluation (square): " << empty_score_square << "\n";
-        
-        std::cout << "\nTest 2: Scoring Area Evaluation\n";
-        
-        // Add stones in scoring areas
-        gameState.setPiece(2, 1, CIRCLE_STONE);  // Circle stone in square scoring area
-        gameState.setPiece(3, 5, SQUARE_STONE);  // Square stone in circle scoring area
-        
-        float scoring_score_circle = evaluator.basicEvaluateBoard(gameState, true);
-        float scoring_score_square = evaluator.basicEvaluateBoard(gameState, false);
-        
-        std::cout << "✓ With scoring stones (circle): " << scoring_score_circle << "\n";
-        std::cout << "✓ With scoring stones (square): " << scoring_score_square << "\n";
-        std::cout << "✓ Circle advantage: " << (scoring_score_circle - empty_score_circle) << "\n";
-        std::cout << "✓ Square disadvantage: " << (scoring_score_square - empty_score_square) << "\n";
-        
-        std::cout << "\nTest 3: Positional Evaluation\n";
-        
-        // Add stones in various positions
-        GameState positionState(7, 7);
-        positionState.setPiece(1, 1, CIRCLE_STONE);  // Circle stone near top
-        positionState.setPiece(4, 5, CIRCLE_STONE);  // Circle stone near bottom
-        positionState.setPiece(1, 5, SQUARE_STONE);  // Square stone near bottom
-        positionState.setPiece(4, 1, SQUARE_STONE);  // Square stone near top
-        
-        float pos_score_circle = evaluator.basicEvaluateBoard(positionState, true);
-        float pos_score_square = evaluator.basicEvaluateBoard(positionState, false);
-        
-        std::cout << "✓ Positional evaluation (circle): " << pos_score_circle << "\n";
-        std::cout << "✓ Positional evaluation (square): " << pos_score_square << "\n";
-        
-        std::cout << "\nTest 4: Evaluation Caching\n";
-        
-        // Test cache performance
-        auto start_time = std::chrono::high_resolution_clock::now();
-        for (int i = 0; i < 1000; ++i) {
-            evaluator.basicEvaluateBoard(gameState, true);
-        }
-        auto end_time = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-        
-        std::cout << "✓ 1000 cached evaluations took: " << duration.count() << " microseconds\n";
-        std::cout << "✓ Cache size: " << evaluator.getCacheSize() << " entries\n";
-        
-        std::cout << "\nTest 5: Scaffold Method Verification\n";
-        
-        // Test all scaffold methods exist and return 0
-        float material = evaluator.evaluateMaterial(gameState, true);
-        float position = evaluator.evaluatePosition(gameState, true);  
-        float threats = evaluator.evaluateThreats(gameState, true);
-        float mobility = evaluator.evaluateMobility(gameState, true);
-        float rivers = evaluator.evaluateRiverControl(gameState, true);
-        float safety = evaluator.evaluateSafety(gameState, true);
-        
-        std::cout << "✓ Material evaluation scaffold: " << material << " (expected: 0)\n";
-        std::cout << "✓ Position evaluation scaffold: " << position << " (expected: 0)\n";
-        std::cout << "✓ Threats evaluation scaffold: " << threats << " (expected: 0)\n";
-        std::cout << "✓ Mobility evaluation scaffold: " << mobility << " (expected: 0)\n";
-        std::cout << "✓ River control scaffold: " << rivers << " (expected: 0)\n";
-        std::cout << "✓ Safety evaluation scaffold: " << safety << " (expected: 0)\n";
-        
-        // Clear cache for clean state
-        evaluator.clearCache();
-        
-        std::cout << "\n🎉 BOARD EVALUATOR TESTS COMPLETED! 🎉\n";
-        std::cout << "=======================================\n\n";
     }
 
     // Test GameState functionality
@@ -2452,7 +2781,6 @@ void runAllTests() {
     // Create a StudentAgent instance to test Phase 3 & 4 features
     StudentAgent agent("circle");
     agent.testMoveGen3();
-    agent.testBoardEvaluator();
 }
 
 // ---- PyBind11 bindings ----
@@ -2469,8 +2797,7 @@ PYBIND11_MODULE(student_agent_module, m) {
         .def("choose", &StudentAgent::choose)
         .def("testGameState", &StudentAgent::testGameState)
         .def("testMoveGenerator", &StudentAgent::testMoveGenerator)
-        .def("testMoveGen3", &StudentAgent::testMoveGen3)
-        .def("testBoardEvaluator", &StudentAgent::testBoardEvaluator);
+        .def("testMoveGen3", &StudentAgent::testMoveGen3);
     
     // Add standalone test functions
     m.def("runGameStateTests", &runGameStateTests, "Run comprehensive GameState tests");
