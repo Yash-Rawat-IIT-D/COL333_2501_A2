@@ -17,11 +17,13 @@
 #include <cstdint>
 #include <deque>
 #include <unordered_set>
+#include <set>
 
 namespace py = pybind11;
 
 // Forward declarations
 struct Move;
+const int MAX_DEPTH = 3;
 
 // ==================== AI DECISION LOGGING SYSTEM ====================
 
@@ -213,7 +215,7 @@ public:
 };
 
 // Global logger instance
-static AILogger g_logger;
+// static AILogger g_logger;
 
 /*
 =========================================================
@@ -399,7 +401,11 @@ private:
     std::vector<std::vector<uint8_t>> board;
     int rows, cols;
     std::vector<int> score_cols;
-    uint64_t hash_value;
+    // uint64_t hash_value;
+    
+    // Position tracking sets for O(log n) operations
+    mutable std::set<std::pair<int,int>> circle_piece_positions;
+    mutable std::set<std::pair<int,int>> square_piece_positions;
     
     // Game constants (from gameEngine.py analysis)
     static constexpr int WIN_COUNT = 4;
@@ -407,21 +413,56 @@ private:
     
     int getBottomScoreRow() const { return rows - 3; }
     
-    // Hash computation for transposition tables
-    void computeHash() {
-        hash_value = 0;
-        std::hash<uint64_t> hasher;
+    // Position tracking helpers
+    void addPiecePosition(int x, int y, uint8_t piece) {
+        if (piece == EMPTY) return;
+        std::pair<int,int> pos(x, y);
+        if (::isCircle(piece)) {
+            circle_piece_positions.insert(pos);
+        } else if (::isSquare(piece)) {
+            square_piece_positions.insert(pos);
+        }
+    }
+    
+    void removePiecePosition(int x, int y, uint8_t piece) {
+        if (piece == EMPTY) return;
+        std::pair<int,int> pos(x, y);
+        if (::isCircle(piece)) {
+            circle_piece_positions.erase(pos);
+        } else if (::isSquare(piece)) {
+            square_piece_positions.erase(pos);
+        }
+    }
+    
+    void initializePositionTracking() {
+        circle_piece_positions.clear();
+        square_piece_positions.clear();
         
         for (int y = 0; y < rows; ++y) {
             for (int x = 0; x < cols; ++x) {
-                if (board[y][x] != EMPTY) {
-                    // Zobrist-like hashing: position + piece type
-                    uint64_t piece_hash = (uint64_t(board[y][x]) << 16) | (uint64_t(y) << 8) | uint64_t(x);
-                    hash_value ^= hasher(piece_hash);
+                uint8_t piece = board[y][x];
+                if (piece != EMPTY) {
+                    addPiecePosition(x, y, piece);
                 }
             }
         }
     }
+    
+    // Hash computation for transposition tables
+    // void computeHash() {
+    //     hash_value = 0;
+    //     std::hash<uint64_t> hasher;
+    //     
+    //     for (int y = 0; y < rows; ++y) {
+    //         for (int x = 0; x < cols; ++x) {
+    //             if (board[y][x] != EMPTY) {
+    //                 // Zobrist-like hashing: position + piece type
+    //                 uint64_t piece_hash = (uint64_t(board[y][x]) << 16) | (uint64_t(y) << 8) | uint64_t(x);
+    //                 hash_value ^= hasher(piece_hash);
+    //             }
+    //         }
+    //     }
+    // }
     
 public:
     // Constructor
@@ -435,13 +476,16 @@ public:
             score_cols.push_back(i);
         }
         
-        computeHash();
+        initializePositionTracking();
+        // computeHash();
     }
     
     // Fast copy constructor for minimax simulations
     GameState(const GameState& other) 
         : board(other.board), rows(other.rows), cols(other.cols), 
-          score_cols(other.score_cols), hash_value(other.hash_value) {}
+          score_cols(other.score_cols), //hash_value(other.hash_value),
+          circle_piece_positions(other.circle_piece_positions),
+          square_piece_positions(other.square_piece_positions) {}
     
     // Assignment operator
     GameState& operator=(const GameState& other) {
@@ -450,7 +494,9 @@ public:
             rows = other.rows;
             cols = other.cols;
             score_cols = other.score_cols;
-            hash_value = other.hash_value;
+            // hash_value = other.hash_value;
+            circle_piece_positions = other.circle_piece_positions;
+            square_piece_positions = other.square_piece_positions;
         }
         return *this;
     }
@@ -470,15 +516,16 @@ public:
                 }
             }
         }
-        computeHash();
+        initializePositionTracking();
+        // computeHash();
     }
     
     // Update hash incrementally after move (for efficiency)
-    void updateHashAfterMove(int from_x, int from_y, int to_x, int to_y, uint8_t piece) {
-        // XOR out old position, XOR in new position
-        hash_value ^= (uint64_t(piece) << (from_x + from_y * cols)) * 0x9e3779b97f4a7c15ULL;
-        hash_value ^= (uint64_t(piece) << (to_x + to_y * cols)) * 0x9e3779b97f4a7c15ULL;
-    }
+    // void updateHashAfterMove(int from_x, int from_y, int to_x, int to_y, uint8_t piece) {
+    //     // XOR out old position, XOR in new position
+    //     hash_value ^= (uint64_t(piece) << (from_x + from_y * cols)) * 0x9e3779b97f4a7c15ULL;
+    //     hash_value ^= (uint64_t(piece) << (to_x + to_y * cols)) * 0x9e3779b97f4a7c15ULL;
+    // }
     
     // Deep copy for search tree
     GameState clone() const {
@@ -492,7 +539,10 @@ public:
     
     inline void setPiece(int x, int y, uint8_t piece) {
         if (inBounds(x, y)) {
+            uint8_t oldPiece = board[y][x];
+            removePiecePosition(x, y, oldPiece);
             board[y][x] = piece;
+            addPiecePosition(x, y, piece);
         }
     }
     
@@ -507,7 +557,16 @@ public:
     int getRows() const { return rows; }
     int getCols() const { return cols; }
     const std::vector<int>& getScoreCols() const { return score_cols; }
-    uint64_t getHash() const { return hash_value; }
+    // uint64_t getHash() const { return hash_value; }
+    
+    // Fast access to piece positions - O(1) access, O(log n) insert/delete
+    const std::set<std::pair<int,int>>& getCirclePiecePositions() const { return circle_piece_positions; }
+    const std::set<std::pair<int,int>>& getSquarePiecePositions() const { return square_piece_positions; }
+    
+    // Get all player pieces - convenience method
+    const std::set<std::pair<int,int>>& getPlayerPiecePositions(bool isCircle) const {
+        return isCircle ? circle_piece_positions : square_piece_positions;
+    }
     
     // Check if position is opponent's scoring area
     bool isOpponentScoreCell(int x, int y, bool isCircle) const {
@@ -570,42 +629,23 @@ public:
         return count;
     }
     
-    // Count all pieces of a player
+    // Count all pieces of a player - O(1) using position sets
     int countPlayerPieces(bool isCircle) const {
-        int count = 0;
-        for (int y = 0; y < rows; ++y) {
-            for (int x = 0; x < cols; ++x) {
-                uint8_t piece = board[y][x];
-                if (isCircle ? ::isCircle(piece) : ::isSquare(piece)) {
-                    count++;
-                }
-            }
-        }
-        return count;
+        return isCircle ? circle_piece_positions.size() : square_piece_positions.size();
     }
     
-    // Count stones specifically
+    // Count stones specifically - O(n) where n = number of player pieces (max 12)
     int countPlayerStones(bool isCircle) const {
         int count = 0;
-        uint8_t target = isCircle ? CIRCLE_STONE : SQUARE_STONE;
+        const auto& positions = isCircle ? circle_piece_positions : square_piece_positions;
         
-        for (int y = 0; y < rows; ++y) {
-            for (int x = 0; x < cols; ++x) {
-                if (board[y][x] == target) {
-                    count++;
-                }
+        for (const auto& pos : positions) {
+            uint8_t piece = board[pos.second][pos.first];
+            if (::isStone(piece)) {
+                count++;
             }
         }
         return count;
-    }
-    
-    // Quick validation helpers
-    bool isValidPosition(int x, int y) const {
-        return inBounds(x, y);
-    }
-    
-    bool canPlacePiece(int x, int y) const {
-        return isEmpty(x, y);
     }
     
     bool isPlayerPiece(int x, int y, bool isCircle) const {
@@ -635,22 +675,45 @@ public:
     // Apply basic move (without validation for speed)
     void applyBasicMove(int from_x, int from_y, int to_x, int to_y) {
         if (inBounds(from_x, from_y) && inBounds(to_x, to_y)) {
-            board[to_y][to_x] = board[from_y][from_x];
+            uint8_t piece = board[from_y][from_x];
+            uint8_t displaced_piece = board[to_y][to_x];
+            
+            // Update position tracking
+            removePiecePosition(from_x, from_y, piece);
+            removePiecePosition(to_x, to_y, displaced_piece);
+            
+            board[to_y][to_x] = piece;
             board[from_y][from_x] = EMPTY;
-            computeHash();
+            
+            addPiecePosition(to_x, to_y, piece);
+            
+            // computeHash();
         }
     }
     
     // Apply push move
     void applyPushMove(int from_x, int from_y, int to_x, int to_y, int push_x, int push_y) {
         if (inBounds(from_x, from_y) && inBounds(to_x, to_y) && inBounds(push_x, push_y)) {
+            uint8_t our_piece = board[from_y][from_x];
+            uint8_t pushed_piece = board[to_y][to_x];
+            uint8_t displaced_piece = board[push_y][push_x];
+            
+            // Update position tracking
+            removePiecePosition(from_x, from_y, our_piece);
+            removePiecePosition(to_x, to_y, pushed_piece);
+            removePiecePosition(push_x, push_y, displaced_piece);
+            
             // Move pushed piece to push destination
-            board[push_y][push_x] = board[to_y][to_x];
+            board[push_y][push_x] = pushed_piece;
             // Move our piece to the intermediate position
-            board[to_y][to_x] = board[from_y][from_x];
+            board[to_y][to_x] = our_piece;
             // Clear original position
             board[from_y][from_x] = EMPTY;
-            computeHash();
+            
+            addPiecePosition(to_x, to_y, our_piece);
+            addPiecePosition(push_x, push_y, pushed_piece);
+            
+            // computeHash();
         }
     }
     
@@ -658,42 +721,58 @@ public:
     void applyFlip(int x, int y, const std::string& new_orientation = "horizontal") {
         if (!inBounds(x, y)) return;
         
-        uint8_t piece = board[y][x];
-        if (piece == EMPTY) return;
+        uint8_t old_piece = board[y][x];
+        if (old_piece == EMPTY) return;
         
-        bool isCircleOwner = ::isCircle(piece);
+        bool isCircleOwner = ::isCircle(old_piece);
+        uint8_t new_piece;
         
-        if (::isStone(piece)) {
+        if (::isStone(old_piece)) {
             // Stone -> River
             bool isHoriz = (new_orientation == "horizontal");
-            board[y][x] = isCircleOwner ? 
+            new_piece = isCircleOwner ? 
                 (isHoriz ? CIRCLE_RIVER_H : CIRCLE_RIVER_V) : 
                 (isHoriz ? SQUARE_RIVER_H : SQUARE_RIVER_V);
         } else {
             // River -> Stone
-            board[y][x] = isCircleOwner ? CIRCLE_STONE : SQUARE_STONE;
+            new_piece = isCircleOwner ? CIRCLE_STONE : SQUARE_STONE;
         }
-        computeHash();
+        
+        // Update position tracking (piece stays in same position but changes type)
+        removePiecePosition(x, y, old_piece);
+        board[y][x] = new_piece;
+        addPiecePosition(x, y, new_piece);
+        
+        // computeHash();
     }
     
     // Rotate river
     void applyRotate(int x, int y) {
         if (!inBounds(x, y)) return;
         
-        uint8_t piece = board[y][x];
-        if (!::isRiver(piece)) return;
+        uint8_t old_piece = board[y][x];
+        if (!::isRiver(old_piece)) return;
         
+        uint8_t new_piece;
         // Toggle orientation
-        if (piece == CIRCLE_RIVER_H) {
-            board[y][x] = CIRCLE_RIVER_V;
-        } else if (piece == CIRCLE_RIVER_V) {
-            board[y][x] = CIRCLE_RIVER_H;
-        } else if (piece == SQUARE_RIVER_H) {
-            board[y][x] = SQUARE_RIVER_V;
-        } else if (piece == SQUARE_RIVER_V) {
-            board[y][x] = SQUARE_RIVER_H;
+        if (old_piece == CIRCLE_RIVER_H) {
+            new_piece = CIRCLE_RIVER_V;
+        } else if (old_piece == CIRCLE_RIVER_V) {
+            new_piece = CIRCLE_RIVER_H;
+        } else if (old_piece == SQUARE_RIVER_H) {
+            new_piece = SQUARE_RIVER_V;
+        } else if (old_piece == SQUARE_RIVER_V) {
+            new_piece = SQUARE_RIVER_H;
+        } else {
+            return; // Invalid piece for rotation
         }
-        computeHash();
+        
+        // Update position tracking (piece stays in same position but changes orientation)
+        removePiecePosition(x, y, old_piece);
+        board[y][x] = new_piece;
+        addPiecePosition(x, y, new_piece);
+        
+        // computeHash();
     }
     
     // Debugging: print board state
@@ -754,18 +833,25 @@ std::string AILogger::moveToString(const Move& move) const {
 class BoardEvaluator {
 private:
     // Evaluation caching for performance
-    mutable std::unordered_map<uint64_t, float> evaluation_cache;
+    // mutable std::unordered_map<uint64_t, float> evaluation_cache;
     
     // Performance optimization: pre-computed scoring area bounds
     struct ScoringArea {
-        int start_row = 0;
-        int end_row = 0;  // Inclusive bounds for scoring rows
+        int row = 0;  // Inclusive bounds for scoring rows
         std::vector<int> score_cols;  // Scoring columns
     };
     
     mutable ScoringArea circle_scoring;   // Circle's scoring area (bottom rows)
     mutable ScoringArea square_scoring;   // Square's scoring area (top rows)
     mutable bool scoring_areas_initialized = false;
+
+    float weight1 = 300.0f;
+    float weight2 = 100.0f; //<180 onwards
+    float weight3 = -80.0f;
+    float weight4 = 150.0f;
+    float weight5 = 200.0f;
+    float weight6 = 200.0f;
+    float weight7 = 200.0f;
     
     // Initialize scoring areas based on game configuration
     void initializeScoringAreas(const GameState& gameState) const {
@@ -775,13 +861,11 @@ private:
         const auto& score_cols = gameState.getScoreCols();
         
         // Circle scores in bottom rows (rows-3 to rows-1)
-        circle_scoring.start_row = rows - 3;
-        circle_scoring.end_row = rows - 1;
+        circle_scoring.row = rows - 3;
         circle_scoring.score_cols = score_cols;
         
         // Square scores in top rows (0 to 2)
-        square_scoring.start_row = 0;
-        square_scoring.end_row = 2;
+        square_scoring.row = 2;
         square_scoring.score_cols = score_cols;
         
         scoring_areas_initialized = true;
@@ -791,42 +875,96 @@ public:
     // ==================== PHASE 4A: CORE EVALUATION ====================
     
     // Main evaluation function - exact compatibility with Python basic_evaluate_board
-    float basicEvaluateBoard(const GameState& gameState, bool isCirclePlayer) const {
+    float Evaluateboard(const GameState& gameState, bool isCirclePlayer) const {
+        initializeScoringAreas(gameState);
+
         // Check cache first
-        uint64_t hash = gameState.getHash();
-        uint64_t cache_key = hash ^ (isCirclePlayer ? 1ULL : 0ULL);  // Player-specific cache
+        // uint64_t hash = gameState.getHash();
+        // uint64_t cache_key = hash ^ (isCirclePlayer ? 1ULL : 0ULL);  // Player-specific cache
         
-        auto cache_it = evaluation_cache.find(cache_key);
-        if (cache_it != evaluation_cache.end()) {
-            return cache_it->second;
+        // auto cache_it = evaluation_cache.find(cache_key);
+        // if (cache_it != evaluation_cache.end()) {
+            //     return cache_it->second;
+            // }
+            
+            float score1 = computeBasicEvaluation(gameState, isCirclePlayer);
+            float score2 = evaluatePosition(gameState, isCirclePlayer);
+            float score3 = evaluateSafety(gameState, isCirclePlayer);
+            float score4 = evaluateMobility(gameState, isCirclePlayer);
+            
+            // Cache the result
+            // evaluation_cache[cache_key] = score;
+            float score = score1*weight1 + score2*weight2 + score3*weight3 + score4*weight4;
+            return score;
         }
         
-        float score = computeBasicEvaluation(gameState, isCirclePlayer);
+    // Core evaluation computation - mirrors Python basic_evaluate_board exactly
+    float computeBasicEvaluation(const GameState& gameState, bool isCirclePlayer) const {
         
-        // Cache the result
-        evaluation_cache[cache_key] = score;
+        float score = 0.0f;
+        
+        // Count stones in scoring areas (matches Python logic exactly)
+        int player_scoring_stones = countStonesInScoringArea(gameState, isCirclePlayer);
+        int opponent_scoring_stones = countStonesInScoringArea(gameState, !isCirclePlayer);
+        
+        score += player_scoring_stones * 1.0f;   // +100 per scoring stone
+        score -= opponent_scoring_stones * 1.0f; // -100 per opponent scoring stone
+
+        int player_scoring_Rivers = countRiversInScoringArea(gameState, isCirclePlayer);
+        int opponent_scoring_Rivers = countRiversInScoringArea(gameState, !isCirclePlayer);
+        
+        score += player_scoring_Rivers * 0.6f;   // +100 per scoring River
+        score -= opponent_scoring_Rivers * 0.6f; // -100 per opponent scoring River
+        
         return score;
-    }
-    
-    // ==================== PHASE 4B: EVALUATION SCAFFOLDS ====================
-    
-    // Material evaluation - piece counting and type analysis
-    float evaluateMaterial(const GameState& gameState, bool isCirclePlayer) const {
-        // TODO: Advanced material evaluation
-        // - Count stones vs rivers
-        // - Weight piece types differently
-        // - Consider piece positioning in material value
-        return 0.0f;  // Placeholder
     }
     
     // Position evaluation - territorial control and piece placement
     float evaluatePosition(const GameState& gameState, bool isCirclePlayer) const {
-        // TODO: Advanced positional evaluation  
-        // - Territory control metrics
-        // - Piece centralization
-        // - Distance to key squares
-        // - Formation analysis
-        return 0.0f;  // Placeholder
+        std::vector<int> player_distances = getDistancesFromScoringArea(gameState, isCirclePlayer);
+        // std::vector<int> opponent_distances = getDistancesFromScoringArea(gameState, !isCirclePlayer);
+        
+        auto calculatePositionScore = [](const std::vector<int>& distances) -> float {
+            float score = 0.0f;
+            
+            // Base score: sum of (25 - distance) for all pieces
+            for (int dist : distances) {
+                // Clamp distance to reasonable maximum to prevent negative scores
+                int clamped_dist = std::min(dist, 24);  // Max distance gives score of 1
+                score += (25.0f - clamped_dist);
+            }
+            
+            // Extra rewards for pieces marching towards closer values
+            // Bonus increases quadratically as pieces get closer
+            for (int dist : distances) {
+                if (dist <= 1) {
+                    score += 25.0f;  // Huge bonus for distance 1 (immediate threat)
+                }
+                else if (dist <= 3) {
+                    score += 10.0f;  // Large bonus for very close pieces
+                }
+                else if (dist <= 6) {
+                    score += 4.0f;   // Medium bonus for close pieces
+                }
+                else if (dist <= 10) {
+                    score += 2.0f;   // Small bonus for advancing pieces
+                }
+                // No extra bonus for very distant pieces (dist > 10)
+            }
+            
+            // Additional bonus for having multiple close pieces (clustering reward)
+            // int very_close_count = std::count_if(distances.begin(), distances.end(), 
+            //                                    [](int d) { return d <= 3; });
+            // if (very_close_count > 1) {
+            //     score += very_close_count * very_close_count * 5.0f;  // Quadratic clustering bonus
+            // }
+            return score;
+        };
+        
+        float player_score = calculatePositionScore(player_distances);
+        // float opponent_score = calculatePositionScore(opponent_distances);
+        
+        return (player_score)/300;
     }
     
     // Threat evaluation - immediate scoring opportunities
@@ -838,13 +976,15 @@ public:
         return 0.0f;  // Placeholder
     }
     
-    // Mobility evaluation - move flexibility assessment
+    // Mobility evaluation - stones adjacent to rivers have higher mobility
     float evaluateMobility(const GameState& gameState, bool isCirclePlayer) const {
-        // TODO: Mobility evaluation
-        // - Available move count
-        // - Quality of available moves
-        // - Piece coordination potential
-        return 0.0f;  // Placeholder
+        // Count my stones adjacent to any river
+        int my_mobile_stones = countStonesAdjacentToRivers(gameState, isCirclePlayer);
+        
+        // Count opponent stones adjacent to any river
+        int opponent_mobile_stones = countStonesAdjacentToRivers(gameState, !isCirclePlayer);
+        
+        return static_cast<float>(my_mobile_stones - opponent_mobile_stones);
     }
     
     // River control evaluation - strategic river placement
@@ -856,54 +996,21 @@ public:
         return 0.0f;  // Placeholder
     }
     
-    // Safety evaluation - piece vulnerability analysis
+    // Safety evaluation - open positions around scoring areas
     float evaluateSafety(const GameState& gameState, bool isCirclePlayer) const {
-        // TODO: Safety evaluation
-        // - Pieces under attack
-        // - Defensive formations
-        // - Escape route analysis
-        return 0.0f;  // Placeholder
-    }
-    
-    // ==================== PHASE 4A: IMPLEMENTATION DETAILS ====================
-    
-private:
-    // Core evaluation computation - mirrors Python basic_evaluate_board exactly
-    float computeBasicEvaluation(const GameState& gameState, bool isCirclePlayer) const {
         initializeScoringAreas(gameState);
         
-        float score = 0.0f;
-        int rows = gameState.getRows();
-        int cols = gameState.getCols();
+        // Count open positions around opponent's scoring area
+        // int opponent_open_sides = countOpenSidesAroundScoringArea(gameState, !isCirclePlayer);
         
-        // Count stones in scoring areas (matches Python logic exactly)
-        int player_scoring_stones = countStonesInScoringArea(gameState, isCirclePlayer);
-        int opponent_scoring_stones = countStonesInScoringArea(gameState, !isCirclePlayer);
+        // Count open positions around my scoring area
+        int my_open_sides = countOpenSidesAroundScoringArea(gameState, isCirclePlayer);
         
-        score += player_scoring_stones * 100.0f;   // +100 per scoring stone
-        score -= opponent_scoring_stones * 100.0f; // -100 per opponent scoring stone
-        
-        // Positional scoring for all player stones (matches Python logic)
-        for (int y = 0; y < rows; ++y) {
-            for (int x = 0; x < cols; ++x) {
-                if (gameState.isEmpty(x, y)) continue;
-                
-                // Check if this is a player's stone
-                if (gameState.isPlayerPiece(x, y, isCirclePlayer) && 
-                    gameState.getPieceType(x, y) == "stone") {
-                    
-                    // Basic positional scoring (matches Python exactly)
-                    if (isCirclePlayer) {
-                        score += (rows - y) * 0.1f;  // Circle prefers bottom
-                    } else {
-                        score += y * 0.1f;           // Square prefers top
-                    }
-                }
-            }
-        }
-        
-        return score;
+        return (my_open_sides)/3.0f;
     }
+    
+
+private:
     
     // Count stones in scoring area - helper function
     int countStonesInScoringArea(const GameState& gameState, bool isCirclePlayer) const {
@@ -911,29 +1018,197 @@ private:
         const ScoringArea& area = isCirclePlayer ? circle_scoring : square_scoring;
         
         // Check all positions in the scoring area
-        for (int y = area.start_row; y <= area.end_row; ++y) {
-            for (int col : area.score_cols) {
-                if (gameState.inBounds(col, y) &&
-                    gameState.isPlayerPiece(col, y, isCirclePlayer) &&
-                    gameState.getPieceType(col, y) == "stone") {
-                    count++;
-                }
+        for (int col : area.score_cols) {
+            if (gameState.inBounds(col,area.row) &&
+                gameState.isPlayerPiece(col,area.row, isCirclePlayer) &&
+                gameState.getPieceType(col,area.row) == "stone") {
+                count++;
+            }
+        }
+        
+        return count;
+    }
+    // Count stones in scoring area - helper function
+    int countRiversInScoringArea(const GameState& gameState, bool isCirclePlayer) const {
+        int count = 0;
+        const ScoringArea& area = isCirclePlayer ? circle_scoring : square_scoring;
+        
+        // Check all positions in the scoring area
+        for (int col : area.score_cols) {
+            if (gameState.inBounds(col,area.row) &&
+                gameState.isPlayerPiece(col,area.row, isCirclePlayer) &&
+                gameState.getPieceType(col,area.row) == "river") {
+                count++;
             }
         }
         
         return count;
     }
     
-public:
-    // Clear evaluation cache (useful for testing)
-    void clearCache() const {
-        evaluation_cache.clear();
+    // Calculate distances from scoring area for all player pieces
+    // Returns list of minimum Manhattan distances to any of the 4 scoring cells
+    std::vector<int> getDistancesFromScoringArea(const GameState& gameState, bool isCirclePlayer) const {        
+        
+        std::vector<int> distances;
+        const ScoringArea& area = isCirclePlayer ? circle_scoring : square_scoring;
+        
+        // Get all player piece positions using optimized position sets
+        const auto& player_positions = gameState.getPlayerPiecePositions(isCirclePlayer);
+        
+        // Calculate distance for each piece
+        for (const auto& piece_pos : player_positions) {
+            int piece_x = piece_pos.first;
+            int piece_y = piece_pos.second;
+            
+            int min_distance = INT_MAX;
+            
+            // Check distance to each of the 4 scoring cells
+            for (int score_col : area.score_cols) {
+                int score_x = score_col;
+                int score_y = area.row;
+                
+                // Manhattan distance = |x1 - x2| + |y1 - y2|
+                int manhattan_dist = abs(piece_x - score_x) + abs(piece_y - score_y);
+                min_distance = std::min(min_distance, manhattan_dist);
+            }
+            
+            if(min_distance!=0){distances.push_back(min_distance);}
+        }
+        
+        return distances;
     }
     
-    // Get cache statistics (for performance monitoring)
-    size_t getCacheSize() const {
-        return evaluation_cache.size();
+    // Count open positions around a player's scoring area
+    int countOpenSidesAroundScoringArea(const GameState& gameState, bool isCirclePlayer) const {
+        const ScoringArea& area = isCirclePlayer ? circle_scoring : square_scoring;
+        int open_count = 0;
+        
+        // Check all 10 positions around the 4×1 scoring area:
+        // 8 positions above and below + 2 positions on the sides
+        
+        // Check positions above and below the scoring area (8 positions)
+        for (int col : area.score_cols) {
+            int score_x = col;
+            int score_y = area.row;
+            
+            // Position above scoring area
+            int above_y = score_y - 1;
+            if (gameState.inBounds(score_x, above_y)) {
+                if (isPositionOpen(gameState, score_x, above_y, true)) { // true = checking vertical flow
+                    open_count++;
+                }
+            }
+            
+            // Position below scoring area  
+            int below_y = score_y + 1;
+            if (gameState.inBounds(score_x, below_y)) {
+                if (isPositionOpen(gameState, score_x, below_y, true)) { // true = checking vertical flow
+                    open_count++;
+                }
+            }
+        }
+        
+        // Check positions on the sides of the scoring area (2 positions)
+        int leftmost_col = *std::min_element(area.score_cols.begin(), area.score_cols.end());
+        int rightmost_col = *std::max_element(area.score_cols.begin(), area.score_cols.end());
+        
+        // Left side position
+        int left_x = leftmost_col - 1;
+        if (gameState.inBounds(left_x, area.row)) {
+            if (isPositionOpen(gameState, left_x, area.row, false)) { // false = checking horizontal flow
+                open_count++;
+            }
+        }
+        
+        // Right side position
+        int right_x = rightmost_col + 1;
+        if (gameState.inBounds(right_x, area.row)) {
+            if (isPositionOpen(gameState, right_x, area.row, false)) { // false = checking horizontal flow
+                open_count++;
+            }
+        }
+        
+        return open_count;
     }
+    
+    // Check if a position is "open" (empty or has appropriate river orientation)
+    bool isPositionOpen(const GameState& gameState, int x, int y, bool checkingVerticalFlow) const {
+        uint8_t piece = gameState.getPiece(x, y);
+        
+        // Empty cell is always open
+        if (piece == EMPTY) {
+            return true;
+        }
+        
+        // If there's a river, check if it allows the right kind of flow
+        if (::isRiver(piece)) {
+            if (checkingVerticalFlow) {
+                // For vertical flow (above/below positions), we need vertical rivers
+                return ::isVertical(piece);
+            } else {
+                // For horizontal flow (side positions), we need horizontal rivers
+                return ::isHorizontal(piece);
+            }
+        }
+        
+        // Solid pieces (stones) block flow
+        return false;
+    }
+    
+    // Count stones adjacent to any river (for mobility evaluation)
+    int countStonesAdjacentToRivers(const GameState& gameState, bool isCirclePlayer) const {
+        int mobile_stone_count = 0;
+        const auto& player_positions = gameState.getPlayerPiecePositions(isCirclePlayer);
+        
+        // Check each player piece
+        for (const auto& pos : player_positions) {
+            int x = pos.first;
+            int y = pos.second;
+            uint8_t piece = gameState.getPiece(x, y);
+            
+            // Only count stones (not rivers)
+            if (!::isStone(piece)) continue;
+            
+            // Check if this stone is adjacent to any river (in 4 directions)
+            bool is_adjacent_to_river = false;
+            
+            // Check all 4 adjacent directions: up, down, left, right
+            static const int dx[] = {0, 0, -1, 1};
+            static const int dy[] = {-1, 1, 0, 0};
+            
+            for (int dir = 0; dir < 4; ++dir) {
+                int adj_x = x + dx[dir];
+                int adj_y = y + dy[dir];
+                
+                if (gameState.inBounds(adj_x, adj_y)) {
+                    uint8_t adj_piece = gameState.getPiece(adj_x, adj_y);
+                    
+                    // If adjacent cell contains any river (regardless of owner), this stone is mobile
+                    if (::isRiver(adj_piece)) {
+                        is_adjacent_to_river = true;
+                        break;  // Found at least one adjacent river, no need to check other directions
+                    }
+                }
+            }
+            
+            if (is_adjacent_to_river) {
+                mobile_stone_count++;
+            }
+        }
+        
+        return mobile_stone_count;
+    }
+    
+// public:
+//     // Clear evaluation cache (useful for testing)
+//     void clearCache() const {
+//         evaluation_cache.clear();
+//     }
+    
+//     // Get cache statistics (for performance monitoring)
+//     size_t getCacheSize() const {
+//         return evaluation_cache.size();
+//     }
 };
 
 // ==================== MOVE GENERATION ENGINE ====================
@@ -1101,31 +1376,45 @@ public:
         // visited_grid will be resized as needed
     }
     
-    // ==================== PHASE 1: CORE MOVE GENERATION ====================
-    
-    // Main entry point - generates all legal moves for a player with optional move ordering
-    const std::vector<Move>& generateAllMoves(
-        const std::vector<std::vector<std::map<std::string, std::string>>>& board,
-        const std::string& player,
-        int rows, int cols, 
-        const std::vector<int>& score_cols,
-        const Move& tt_best_move = Move(),
-        bool enable_move_ordering = true) {
-        
+    // OPTIMIZED: Generate moves using position sets instead of iterating entire board
+    std::vector<Move> generateAllMovesOptimized(const GameState& state, const std::string& player) {
         // Clear buffer and start fresh
         move_buffer.clear();
         
-        // Iterate through all board positions
-        for (int y = 0; y < rows; ++y) {
-            for (int x = 0; x < cols; ++x) {
-                const auto& cell = board[y][x];
-                
-                // Skip empty cells or opponent pieces
-                if (cell.empty() || getOwnerFromCell(cell) != player) continue;
-                
-                // Generate moves for this piece
-                generateMovesForPiece(board, x, y, player, rows, cols, score_cols);
+        bool isCircle = (player == "circle");
+        const auto& player_positions = isCircle ? state.getCirclePiecePositions() : state.getSquarePiecePositions();
+        
+        // Convert GameState to board format for existing move generation logic
+        int rows = state.getRows();
+        int cols = state.getCols();
+        std::vector<std::vector<std::map<std::string, std::string>>> board_map(rows,
+            std::vector<std::map<std::string, std::string>>(cols));
+        
+        // Only populate cells that have pieces (much faster than full board scan)
+        for (const auto& pos : state.getCirclePiecePositions()) {
+            int x = pos.first, y = pos.second;
+            uint8_t piece = state.getPiece(x, y);
+            board_map[y][x]["owner"] = "circle";
+            board_map[y][x]["side"] = isPieceStone(piece) ? "stone" : "river";
+            if (!isPieceStone(piece)) {
+                board_map[y][x]["orientation"] = isRiverHorizontal(piece) ? "horizontal" : "vertical";
             }
+        }
+        
+        for (const auto& pos : state.getSquarePiecePositions()) {
+            int x = pos.first, y = pos.second;
+            uint8_t piece = state.getPiece(x, y);
+            board_map[y][x]["owner"] = "square";
+            board_map[y][x]["side"] = isPieceStone(piece) ? "stone" : "river";
+            if (!isPieceStone(piece)) {
+                board_map[y][x]["orientation"] = isRiverHorizontal(piece) ? "horizontal" : "vertical";
+            }
+        }
+        
+        // Generate moves only for player's pieces (O(n) where n = player piece count)
+        for (const auto& pos : player_positions) {
+            int x = pos.first, y = pos.second;
+            generateMovesForPiece(board_map, x, y, player, rows, cols, state.getScoreCols());
         }
         
         return move_buffer;
@@ -1313,33 +1602,6 @@ public:
         
         return true; // Safe rotation
     }
-
-    
-    // Check if a move blocks opponent advancement
-    bool isBlockingMove(const std::vector<std::vector<std::map<std::string, std::string>>>& board,
-                       int from_x, int from_y, int to_x, int to_y, const std::string& player,
-                       int rows, int cols, const std::vector<int>& score_cols) const {
-        
-        std::string opponent = (player == "circle") ? "square" : "circle";
-        int player_score_row = (player == "circle") ? 2 : (rows - 3);
-        
-        // Check if destination position blocks a path to our scoring area
-        for (auto [dx, dy] : DIRECTIONS) {
-            int check_x = to_x + dx, check_y = to_y + dy;
-            if (!inBounds(check_x, check_y, rows, cols)) continue;
-            
-            const auto& adjacent_cell = board[check_y][check_x];
-            if (!adjacent_cell.empty() && getOwnerFromCell(adjacent_cell) == opponent) {
-                // Check if this opponent piece was threatening our scoring area
-                int distance_to_our_score = std::abs(check_y - player_score_row);
-                if (distance_to_our_score <= 3) {  // Within threatening range
-                    return true;
-                }
-            }
-        }
-        
-        return false;
-    }
     
 };
 
@@ -1397,19 +1659,20 @@ private:
     // Allocate time for current move based on game state
     float allocateTimeForMove(float remaining_time, float opponent_time) const {
         // Safety check: always reserve emergency buffer
-        float usable_time = std::max(0.1f, remaining_time - emergency_buffer);
+        // float usable_time = std::max(0.1f, remaining_time - emergency_buffer);
         
-        // Basic time allocation strategy
-        if (remaining_time > 30.0f) {
-            // Early/mid game: use moderate time
-            return std::min(5.0f, usable_time * 0.15f);
-        } else if (remaining_time > 10.0f) {
-            // Late game: be more aggressive with time usage
-            return std::min(8.0f, usable_time * 0.25f);
-        } else {
-            // Endgame: use most remaining time but keep emergency reserve
-            return std::min(remaining_time * 0.7f, usable_time);
-        }
+        // // Basic time allocation strategy
+        // if (remaining_time > 30.0f) {
+        //     // Early/mid game: use moderate time
+        //     return std::min(5.0f, usable_time * 0.15f);
+        // } else if (remaining_time > 10.0f) {
+        //     // Late game: be more aggressive with time usage
+        //     return std::min(8.0f, usable_time * 0.25f);
+        // } else {
+        //     // Endgame: use most remaining time but keep emergency reserve
+        //     return std::min(remaining_time * 0.7f, usable_time);
+        // }
+        return 60.0f;
     }
 };
 
@@ -1429,174 +1692,182 @@ struct SearchResult {
 
 // ==================== TRANSPOSITION TABLE ====================
 
-struct TTEntry {
-    uint64_t hash_key;
-    float evaluation;
-    Move best_move;
-    int depth;
-    int age;
-    enum NodeType {
-        EXACT = 0,
-        LOWER_BOUND = 1,
-        UPPER_BOUND = 2
-    } node_type;
-    
-    TTEntry() : hash_key(0), evaluation(0.0f), depth(-1), age(0), node_type(EXACT) {}
-};
+// struct TTEntry {
+//     uint64_t hash_key;
+//     float evaluation;
+//     Move best_move;
+//     int depth;
+//     int age;
+//     enum NodeType {
+//         EXACT = 0,
+//         LOWER_BOUND = 1,
+//         UPPER_BOUND = 2
+//     } node_type;
+//     
+//     TTEntry() : hash_key(0), evaluation(0.0f), depth(-1), age(0), node_type(EXACT) {}
+// };
 
-class TranspositionTable {
-private:
-    static constexpr size_t TABLE_SIZE = 1024 * 256;  // 256K entries
-    static constexpr size_t TABLE_MASK = TABLE_SIZE - 1;
-    static constexpr int MAX_BOARD_SIZE = 20;  // Reasonable max for our game
-    
-    std::vector<TTEntry> table;
-    int current_age;
-    
-    // Zobrist hash tables (integrated minimal implementation)
-    static uint64_t piece_square_table[7][MAX_BOARD_SIZE][MAX_BOARD_SIZE];
-    static uint64_t player_to_move_key;
-    static bool zobrist_initialized;
-    
-    static void initializeZobrist() {
-        if (zobrist_initialized) return;
-        
-        std::mt19937_64 rng(42);  // Fixed seed for reproducibility
-        std::uniform_int_distribution<uint64_t> dist;
-        
-        // Initialize piece-square table
-        for (int piece = 0; piece < 7; ++piece) {
-            for (int y = 0; y < MAX_BOARD_SIZE; ++y) {
-                for (int x = 0; x < MAX_BOARD_SIZE; ++x) {
-                    piece_square_table[piece][y][x] = dist(rng);
-                }
-            }
-        }
-        
-        player_to_move_key = dist(rng);
-        zobrist_initialized = true;
-    }
-    
-public:
-    TranspositionTable() : current_age(0) {
-        table.resize(TABLE_SIZE);
-        initializeZobrist();
-        clear();
-    }
-    
-    void clear() {
-        std::fill(table.begin(), table.end(), TTEntry{});
-        current_age++;
-    }
-    
-    void newSearch() {
-        current_age++;
-    }
-    
-    // Compute Zobrist hash for a game state
-    uint64_t computeHash(const GameState& state, bool isCircleToMove) const {
-        uint64_t hash = 0;
-        
-        // Hash piece positions
-        for (int y = 0; y < state.getRows(); ++y) {
-            for (int x = 0; x < state.getCols(); ++x) {
-                uint8_t piece = state.getPiece(x, y);
-                if (piece != EMPTY && y < MAX_BOARD_SIZE && x < MAX_BOARD_SIZE) {
-                    hash ^= piece_square_table[piece][y][x];
-                }
-            }
-        }
-        
-        // Hash player to move
-        if (isCircleToMove) {
-            hash ^= player_to_move_key;
-        }
-        
-        return hash;
-    }
-    
-    // Probe the transposition table
-    bool probe(uint64_t hash_key, int depth, float alpha, float beta, 
-               float& evaluation, Move& best_move) const {
-        
-        size_t index = hash_key & TABLE_MASK;
-        const TTEntry& entry = table[index];
-        
-        // Check if entry is valid and matches our position
-        if (entry.hash_key != hash_key || entry.depth < depth) {
-            return false;
-        }
-        
-        best_move = entry.best_move;
-        
-        // Check if we can use this evaluation based on node type
-        switch (entry.node_type) {
-            case TTEntry::EXACT:
-                evaluation = entry.evaluation;
-                return true;
-                
-            case TTEntry::LOWER_BOUND:
-                if (entry.evaluation >= beta) {
-                    evaluation = entry.evaluation;
-                    return true;
-                }
-                break;
-                
-            case TTEntry::UPPER_BOUND:
-                if (entry.evaluation <= alpha) {
-                    evaluation = entry.evaluation;
-                    return true;
-                }
-                break;
-        }
-        
-        return false;  // Can't use this entry's evaluation
-    }
-    
-    // Store position in transposition table
-    void store(uint64_t hash_key, float evaluation, const Move& best_move, 
-               int depth, float original_alpha, float beta) {
-        
-        size_t index = hash_key & TABLE_MASK;
-        TTEntry& entry = table[index];
-        
-        // Determine node type
-        TTEntry::NodeType node_type;
-        if (evaluation <= original_alpha) {
-            node_type = TTEntry::UPPER_BOUND;
-        } else if (evaluation >= beta) {
-            node_type = TTEntry::LOWER_BOUND;
-        } else {
-            node_type = TTEntry::EXACT;
-        }
-        
-        // Replace if empty, deeper, or much older
-        bool should_replace = (entry.hash_key == 0) ||
-                             (entry.depth <= depth) ||
-                             (entry.age < current_age - 2);
-        
-        if (should_replace) {
-            entry.hash_key = hash_key;
-            entry.evaluation = evaluation;
-            entry.best_move = best_move;
-            entry.depth = depth;
-            entry.node_type = node_type;
-            entry.age = current_age;
-        }
-    }
-};
+// class TranspositionTable {
+// private:
+//     static constexpr size_t TABLE_SIZE = 1024 * 256;  // 256K entries
+//     static constexpr size_t TABLE_MASK = TABLE_SIZE - 1;
+//     static constexpr int MAX_BOARD_SIZE = 20;
 
-// Static member definitions
-uint64_t TranspositionTable::piece_square_table[7][MAX_BOARD_SIZE][MAX_BOARD_SIZE];
-uint64_t TranspositionTable::player_to_move_key;
-bool TranspositionTable::zobrist_initialized = false;
+//     std::vector<TTEntry> table;
+//     int current_age;
+    
+//     // Zobrist hash tables (integrated minimal implementation)
+//     static uint64_t piece_square_table[7][MAX_BOARD_SIZE][MAX_BOARD_SIZE];
+//     static uint64_t player_to_move_key;
+//     static bool zobrist_initialized;
+    
+//     static void initializeZobrist() {
+//         if (zobrist_initialized) return;
+        
+//         std::mt19937_64 rng(42);  // Fixed seed for reproducibility
+//         std::uniform_int_distribution<uint64_t> dist;
+        
+//         // Initialize piece-square table
+//         for (int piece = 0; piece < 7; ++piece) {
+//             for (int y = 0; y < MAX_BOARD_SIZE; ++y) {
+//                 for (int x = 0; x < MAX_BOARD_SIZE; ++x) {
+//                     piece_square_table[piece][y][x] = dist(rng);
+//                 }
+//             }
+//         }
+        
+//         player_to_move_key = dist(rng);
+//         zobrist_initialized = true;
+//     }
+    
+// public:
+//     TranspositionTable() : current_age(0) {
+//         table.resize(TABLE_SIZE);
+//         initializeZobrist();
+//         clear();
+//     }
+    
+//     void clear() {
+//         std::fill(table.begin(), table.end(), TTEntry{});
+//         current_age++;
+//     }
+    
+//     void newSearch() {
+//         current_age++;
+//     }
+    
+//     // Compute Zobrist hash for a game state - OPTIMIZED using position sets
+//     uint64_t computeHash(const GameState& state, bool isCircleToMove) const {
+//         uint64_t hash = 0;
+        
+//         // Hash circle pieces
+//         for (const auto& pos : state.getCirclePiecePositions()) {
+//             int x = pos.first, y = pos.second;
+//             if (y < MAX_BOARD_SIZE && x < MAX_BOARD_SIZE) {
+//                 uint8_t piece = state.getPiece(x, y);
+//                 hash ^= piece_square_table[piece][y][x];
+//             }
+//         }
+        
+//         // Hash square pieces
+//         for (const auto& pos : state.getSquarePiecePositions()) {
+//             int x = pos.first, y = pos.second;
+//             if (y < MAX_BOARD_SIZE && x < MAX_BOARD_SIZE) {
+//                 uint8_t piece = state.getPiece(x, y);
+//                 hash ^= piece_square_table[piece][y][x];
+//             }
+//         }
+        
+//         // Hash player to move
+//         if (isCircleToMove) {
+//             hash ^= player_to_move_key;
+//         }
+        
+//         return hash;
+//     }
+    
+//     // Probe the transposition table
+//     bool probe(uint64_t hash_key, int depth, float alpha, float beta, 
+//                float& evaluation, Move& best_move) const {
+        
+//         size_t index = hash_key & TABLE_MASK;
+//         const TTEntry& entry = table[index];
+        
+//         // Check if entry is valid and matches our position
+//         if (entry.hash_key != hash_key || entry.depth < depth) {
+//             return false;
+//         }
+        
+//         best_move = entry.best_move;
+        
+//         // Check if we can use this evaluation based on node type
+//         switch (entry.node_type) {
+//             case TTEntry::EXACT:
+//                 evaluation = entry.evaluation;
+//                 return true;
+                
+//             case TTEntry::LOWER_BOUND:
+//                 if (entry.evaluation >= beta) {
+//                     evaluation = entry.evaluation;
+//                     return true;
+//                 }
+//                 break;
+                
+//             case TTEntry::UPPER_BOUND:
+//                 if (entry.evaluation <= alpha) {
+//                     evaluation = entry.evaluation;
+//                     return true;
+//                 }
+//                 break;
+//         }
+        
+//         return false;  // Can't use this entry's evaluation
+//     }
+    
+//     // Store position in transposition table
+//     void store(uint64_t hash_key, float evaluation, const Move& best_move, 
+//                int depth, float original_alpha, float beta) {
+        
+//         size_t index = hash_key & TABLE_MASK;
+//         TTEntry& entry = table[index];
+        
+//         // Determine node type
+//         TTEntry::NodeType node_type;
+//         if (evaluation <= original_alpha) {
+//             node_type = TTEntry::UPPER_BOUND;
+//         } else if (evaluation >= beta) {
+//             node_type = TTEntry::LOWER_BOUND;
+//         } else {
+//             node_type = TTEntry::EXACT;
+//         }
+        
+//         // Replace if empty, deeper, or much older
+//         bool should_replace = (entry.hash_key == 0) ||
+//                              (entry.depth <= depth) ||
+//                              (entry.age < current_age - 2);
+        
+//         if (should_replace) {
+//             entry.hash_key = hash_key;
+//             entry.evaluation = evaluation;
+//             entry.best_move = best_move;
+//             entry.depth = depth;
+//             entry.node_type = node_type;
+//             entry.age = current_age;
+//         }
+//     }
+// };
+
+// // Static member definitions
+// uint64_t TranspositionTable::piece_square_table[7][MAX_BOARD_SIZE][MAX_BOARD_SIZE];
+// uint64_t TranspositionTable::player_to_move_key;
+// bool TranspositionTable::zobrist_initialized = false;
 
 class MinimaxEngine {
 private:
     BoardEvaluator* evaluator;
     MoveGenerator* moveGenerator;
     TimeManager timeManager;
-    TranspositionTable tt;
+    // TranspositionTable tt;
     
     // Search statistics
     int nodes_searched;
@@ -1614,7 +1885,7 @@ public:
         timeManager.startSearch(remaining_time, opponent_time);
         
         // Initialize TT for new search
-        tt.newSearch();
+        // tt.newSearch();
         
         // Reset search statistics
         nodes_searched = 0;
@@ -1640,7 +1911,7 @@ public:
         SearchResult bestResult;
         bestResult.bestMove = rootMoves[0];  // Default to first legal move
         
-        for (int depth = 1; depth <= 6; ++depth) {  // Maximum depth of 6
+        for (int depth = 1; depth <= MAX_DEPTH; ++depth) {  
             if (timeManager.shouldStop()) break;
             
             SearchResult currentResult = searchAtDepth(position, depth, isCirclePlayer, rootMoves);
@@ -1714,21 +1985,21 @@ private:
         }
         
         // Compute position hash
-        uint64_t position_hash = tt.computeHash(position, isCirclePlayer);
+        // uint64_t position_hash = tt.computeHash(position, isCirclePlayer);
         
         // Probe transposition table
-        float tt_evaluation;
-        Move tt_best_move;
-        if (tt.probe(position_hash, depth, alpha, beta, tt_evaluation, tt_best_move)) {
-            return tt_evaluation;
-        }
+        // float tt_evaluation;
+        // Move tt_best_move;
+        // if (tt.probe(position_hash, depth, alpha, beta, tt_evaluation, tt_best_move)) {
+        //     return tt_evaluation;
+        // }
         
         // Terminal conditions
         if (depth == 0) {
-            float evaluation = evaluator->basicEvaluateBoard(position, isCirclePlayer);
+            float evaluation = evaluator->Evaluateboard(position, isCirclePlayer);
             // Store leaf evaluation in TT
-            Move dummy_move;
-            tt.store(position_hash, evaluation, dummy_move, depth, alpha, beta);
+            // Move dummy_move;
+            // tt.store(position_hash, evaluation, dummy_move, depth, alpha, beta);
             return evaluation;
         }
         
@@ -1749,18 +2020,18 @@ private:
         if (moves.empty()) {
             // No moves available - likely a loss
             float evaluation = -50.0f;
-            Move dummy_move;
-            tt.store(position_hash, evaluation, dummy_move, depth, alpha, beta);
+            // Move dummy_move;
+            // tt.store(position_hash, evaluation, dummy_move, depth, alpha, beta);
             return evaluation;
         }
         
         // Move ordering: try TT best move first
-        if (!tt_best_move.action.empty()) {
-            auto it = std::find(moves.begin(), moves.end(), tt_best_move);
-            if (it != moves.end()) {
-                std::swap(*it, moves[0]);
-            }
-        }
+        // if (!tt_best_move.action.empty()) {
+        //     auto it = std::find(moves.begin(), moves.end(), tt_best_move);
+        //     if (it != moves.end()) {
+        //         std::swap(*it, moves[0]);
+        //     }
+        // }
         
         float maxEval = -1000000.0f;
         Move best_move = moves[0];  // Default best move
@@ -1791,35 +2062,15 @@ private:
         }
         
         // Store result in transposition table
-        tt.store(position_hash, maxEval, best_move, depth, original_alpha, beta);
+        // tt.store(position_hash, maxEval, best_move, depth, original_alpha, beta);
         
         return maxEval;
     }
     
     // Generate moves for a given position and player
     std::vector<Move> generateMovesForPosition(const GameState& position, const std::string& player) {
-        // Convert GameState to the format expected by MoveGenerator
-        int rows = position.getRows();
-        int cols = position.getCols();
-        
-        std::vector<std::vector<std::map<std::string, std::string>>> board_map(rows,
-            std::vector<std::map<std::string, std::string>>(cols));
-        
-        for (int y = 0; y < rows; ++y) {
-            for (int x = 0; x < cols; ++x) {
-                uint8_t piece = position.getPiece(x, y);
-                if (piece != EMPTY) {
-                    board_map[y][x]["owner"] = isPieceOwner(piece, "circle") ? "circle" : "square";
-                    board_map[y][x]["side"] = isPieceStone(piece) ? "stone" : "river";
-                    if (!isPieceStone(piece)) {
-                        board_map[y][x]["orientation"] = isRiverHorizontal(piece) ? "horizontal" : "vertical";
-                    }
-                }
-            }
-        }
-        
-        const std::vector<int>& score_cols = position.getScoreCols();
-        return moveGenerator->generateAllMoves(board_map, player, rows, cols, score_cols);
+        // Use optimized move generation that leverages position sets
+        return moveGenerator->generateAllMovesOptimized(position, player);
     }
     
     // Apply a move to a GameState position
@@ -1862,7 +2113,7 @@ public:
     int getMaxDepthReached() const { return max_depth_reached; }
     
     // Clear transposition table (for testing or new games)
-    void clearTT() { tt.clear(); }
+    // void clearTT() { tt.clear(); }
 };
 
 
@@ -1883,6 +2134,37 @@ public:
         searchEngine = new MinimaxEngine(&evaluator, &moveGen);
     }
     
+    // Helper function to convert GameState to board format using position sets (optimized)
+    std::vector<std::vector<std::map<std::string, std::string>>> convertGameStateToBoard(const GameState& state) {
+        int rows = state.getRows();
+        int cols = state.getCols();
+        std::vector<std::vector<std::map<std::string, std::string>>> board_map(rows,
+            std::vector<std::map<std::string, std::string>>(cols));
+        
+        // Only populate cells that have pieces using position sets - O(n) where n = total pieces
+        for (const auto& pos : state.getCirclePiecePositions()) {
+            int x = pos.first, y = pos.second;
+            uint8_t piece = state.getPiece(x, y);
+            board_map[y][x]["owner"] = "circle";
+            board_map[y][x]["side"] = isPieceStone(piece) ? "stone" : "river";
+            if (!isPieceStone(piece)) {
+                board_map[y][x]["orientation"] = isRiverHorizontal(piece) ? "horizontal" : "vertical";
+            }
+        }
+        
+        for (const auto& pos : state.getSquarePiecePositions()) {
+            int x = pos.first, y = pos.second;
+            uint8_t piece = state.getPiece(x, y);
+            board_map[y][x]["owner"] = "square";
+            board_map[y][x]["side"] = isPieceStone(piece) ? "stone" : "river";
+            if (!isPieceStone(piece)) {
+                board_map[y][x]["orientation"] = isRiverHorizontal(piece) ? "horizontal" : "vertical";
+            }
+        }
+        
+        return board_map;
+    }
+    
     ~StudentAgent() {
         delete searchEngine;
     }
@@ -1890,18 +2172,18 @@ public:
     Move choose(const std::vector<std::vector<std::map<std::string, std::string>>>& board, int row, int col, const std::vector<int>& score_cols, float current_player_time, float opponent_time) {
         
         // Start new move logging
-        g_logger.nextMove();
+        // g_logger.nextMove();
         
         int rows = board.size();
         int cols = board[0].size();
         
         // Log move start
-        std::stringstream move_info;
-        move_info << "=== MOVE DECISION START === "
-                 << "Player: " << side << ", "
-                 << "Board: " << rows << "x" << cols << ", "
-                 << "Time: " << current_player_time << "s (vs " << opponent_time << "s)";
-        g_logger.log(LogLevel::DECISION, move_info.str());
+        // std::stringstream move_info;
+        // move_info << "=== MOVE DECISION START === "
+        //          << "Player: " << side << ", "
+        //          << "Board: " << rows << "x" << cols << ", "
+        //          << "Time: " << current_player_time << "s (vs " << opponent_time << "s)";
+        //g_logger.log(LogLevel::DECISION, move_info.str());
 
         // Convert board to GameState for minimax search
         gameState = GameState(rows, cols);
@@ -1914,96 +2196,68 @@ public:
             Move bestMove = searchEngine->getBestMove(gameState, side, 
                                                      current_player_time, opponent_time);
             
-            // Convert board to format expected by MoveGenerator for validation
-            std::vector<std::vector<std::map<std::string, std::string>>> board_map(rows,
-                std::vector<std::map<std::string, std::string>>(cols));
-            
-            for (int y = 0; y < rows; ++y) {
-                for (int x = 0; x < cols; ++x) {
-                    uint8_t piece = gameState.getPiece(x, y);
-                    if (piece != EMPTY) {
-                        board_map[y][x]["owner"] = isPieceOwner(piece, "circle") ? "circle" : "square";
-                        board_map[y][x]["side"] = isPieceStone(piece) ? "stone" : "river";
-                        if (!isPieceStone(piece)) {
-                            board_map[y][x]["orientation"] = isRiverHorizontal(piece) ? "horizontal" : "vertical";
-                        }
-                    }
-                }
-            }
+            // Convert board to format expected by MoveGenerator for validation - OPTIMIZED
+            // auto board_map = convertGameStateToBoard(gameState);
             
             // Validate the move is legal using the same board format as the search
-            const auto& moves = moveGen.generateAllMoves(board_map, side, rows, cols, score_cols);
+            const auto& moves = moveGen.generateAllMovesOptimized(gameState,side);
             
-            g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Generated " + std::to_string(moves.size()) + 
-                        " legal moves for validation");
-            g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Minimax returned move: " + 
-                        bestMove.action + " (" + std::to_string(bestMove.from[0]) + "," + 
-                        std::to_string(bestMove.from[1]) + ") -> (" + 
-                        std::to_string(bestMove.to[0]) + "," + std::to_string(bestMove.to[1]) + ")");
+            //g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Generated " + std::to_string(moves.size()) + 
+                        // " legal moves for validation");
+            //g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Minimax returned move: " + 
+                        // bestMove.action + " (" + std::to_string(bestMove.from[0]) + "," + 
+                        // std::to_string(bestMove.from[1]) + ") -> (" + 
+                        // std::to_string(bestMove.to[0]) + "," + std::to_string(bestMove.to[1]) + ")");
             
             // Log first few legal moves for comparison
             for (size_t i = 0; i < std::min((size_t)5, moves.size()); ++i) {
                 const auto& move = moves[i];
-                g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Legal move " + std::to_string(i+1) + ": " + 
-                            move.action + " (" + std::to_string(move.from[0]) + "," + 
-                            std::to_string(move.from[1]) + ") -> (" + 
-                            std::to_string(move.to[0]) + "," + std::to_string(move.to[1]) + ")");
+                //g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Legal move " + std::to_string(i+1) + ": " + 
+                            // move.action + " (" + std::to_string(move.from[0]) + "," + 
+                            // std::to_string(move.from[1]) + ") -> (" + 
+                            // std::to_string(move.to[0]) + "," + std::to_string(move.to[1]) + ")");
             }
             
             for (const auto& move : moves) {
                 if (move == bestMove) {
-                    g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Move found in legal moves - SUCCESS!");
-                    g_logger.logDecision(g_logger.moveToString(bestMove), chosen_reasoning);
-                    g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
+                    //g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Move found in legal moves - SUCCESS!");
+                    //g_logger.logDecision(g_logger.moveToString(bestMove), chosen_reasoning);
+                    //g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
                     return bestMove;
                 }
             }
             
-            g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Move NOT found in legal moves - FAILED!");
+            //g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Move NOT found in legal moves - FAILED!");
             
             // Fallback: if minimax move is invalid, use first legal move
             if (!moves.empty()) {
-                chosen_reasoning = "Minimax move invalid, using first legal move";
-                g_logger.log(LogLevel::ERROR, "Minimax returned invalid move, using fallback");
-                g_logger.logDecision(g_logger.moveToString(moves[0]), chosen_reasoning);
-                g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
+                // chosen_reasoning = "Minimax move invalid, using first legal move";
+                //g_logger.log(LogLevel::ERROR, "Minimax returned invalid move, using fallback");
+                //g_logger.logDecision(g_logger.moveToString(moves[0]), chosen_reasoning);
+                //g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
                 return moves[0];
             }
         } catch (const std::exception& e) {
             // Fallback to evaluation-based selection on any search error
             chosen_reasoning = "Minimax failed with exception: " + std::string(e.what());
-            g_logger.log(LogLevel::ERROR, "Minimax search failed: " + std::string(e.what()));
+            //g_logger.log(LogLevel::ERROR, "Minimax search failed: " + std::string(e.what()));
         } catch (...) {
             chosen_reasoning = "Minimax failed with unknown exception";
-            g_logger.log(LogLevel::ERROR, "Minimax search failed with unknown exception");
+            //g_logger.log(LogLevel::ERROR, "Minimax search failed with unknown exception");
         }
         
         // FALLBACK: Use evaluation-based move selection  
-        g_logger.log(LogLevel::INFO, "Using evaluation-based fallback selection");
+        //g_logger.log(LogLevel::INFO, "Using evaluation-based fallback selection");
         
-        // Convert board to format expected by MoveGenerator  
-        std::vector<std::vector<std::map<std::string, std::string>>> board_map(rows,
-            std::vector<std::map<std::string, std::string>>(cols));
+        // Convert board to format expected by MoveGenerator - OPTIMIZED  
+        // auto board_map = convertGameStateToBoard(gameState);
         
-        for (int y = 0; y < rows; ++y) {
-            for (int x = 0; x < cols; ++x) {
-                uint8_t piece = gameState.getPiece(x, y);
-                if (piece != EMPTY) {
-                    board_map[y][x]["owner"] = isPieceOwner(piece, "circle") ? "circle" : "square";
-                    board_map[y][x]["side"] = isPieceStone(piece) ? "stone" : "river";
-                    if (!isPieceStone(piece)) {
-                        board_map[y][x]["orientation"] = isRiverHorizontal(piece) ? "horizontal" : "vertical";
-                    }
-                }
-            }
-        }
-        
-        const auto& moves = moveGen.generateAllMoves(board_map, side, rows, cols, score_cols);
+        const auto& moves = moveGen.generateAllMovesOptimized(gameState,side);
         if (moves.empty()) {
             chosen_reasoning = "No legal moves available - emergency fallback";
-            g_logger.log(LogLevel::ERROR, "No legal moves found!");
-            g_logger.logDecision("emergency fallback", chosen_reasoning);
-            g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
+            //g_logger.log(LogLevel::ERROR, "No legal moves found!");
+            //g_logger.logDecision("emergency fallback", chosen_reasoning);
+            //g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
             return {"move", {0,0}, {0,0}, {}, ""}; // fallback
         }
         
@@ -2014,7 +2268,7 @@ public:
         // Evaluate each move and pick the best one
         for (const auto& move : moves) {
             GameState tempState = gameState;
-            float score = evaluator.basicEvaluateBoard(tempState, isCirclePlayer);
+            float score = evaluator.Evaluateboard(tempState, isCirclePlayer);
             
             // Add small random factor for variety when moves are equally good
             std::uniform_real_distribution<float> random_factor(-0.01f, 0.01f);
@@ -2028,432 +2282,12 @@ public:
         
         // Log final decision
         chosen_reasoning = "Evaluation-based selection (score: " + std::to_string(bestScore) + ")";
-        g_logger.logDecision(g_logger.moveToString(bestMove), chosen_reasoning);
-        g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
+        //g_logger.logDecision(g_logger.moveToString(bestMove), chosen_reasoning);
+        //g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
         
         return bestMove;
     }
-    
-    // Test MoveGenerator functionality
-    void testMoveGenerator() {
-        std::cout << "\n🎯 TESTING MOVE GENERATOR 🎯\n";
-        std::cout << "=============================\n";
-        
-        // Test 1: Basic move generation
-        std::cout << "Test 1: Basic Move Generation\n";
-        
-        // Create a test board
-        std::vector<std::vector<std::map<std::string, std::string>>> test_board(5, 
-            std::vector<std::map<std::string, std::string>>(5));
-        
-        // Add some test pieces
-        test_board[2][2] = {{"owner", "circle"}, {"side", "stone"}, {"orientation", "horizontal"}};
-        test_board[2][3] = {{"owner", "square"}, {"side", "stone"}, {"orientation", "horizontal"}};
-        test_board[1][1] = {{"owner", "circle"}, {"side", "river"}, {"orientation", "horizontal"}};
-        test_board[3][3] = {{"owner", "square"}, {"side", "river"}, {"orientation", "vertical"}};
-        
-        std::vector<int> test_score_cols = {1, 2, 3, 4};
-        
-        // Generate moves for circle player
-        const auto& circle_moves = moveGen.generateAllMoves(test_board, "circle", 5, 5, test_score_cols);
-        std::cout << "✓ Generated " << circle_moves.size() << " moves for circle player\n";
-        
-        // Display first few moves for verification
-        int count = 0;
-        for (const auto& move : circle_moves) {
-            if (count >= 5) break;  // Show only first 5 moves
-            std::cout << "  Move " << (count+1) << ": " << move.action 
-                      << " from (" << move.from[0] << "," << move.from[1] << ")"
-                      << " to (" << move.to[0] << "," << move.to[1] << ")";
-            if (!move.pushed_to.empty()) {
-                std::cout << " pushed_to (" << move.pushed_to[0] << "," << move.pushed_to[1] << ")";
-            }
-            if (!move.orientation.empty()) {
-                std::cout << " orientation: " << move.orientation;
-            }
-            std::cout << "\n";
-            count++;
-        }
-        
-        // Test 2: River flow computation
-        std::cout << "\nTest 2: River Flow Computation\n";
-        
-        // Create board with connected rivers for flow testing
-        std::vector<std::vector<std::map<std::string, std::string>>> flow_board(7, 
-            std::vector<std::map<std::string, std::string>>(7));
-        
-        // Create a horizontal river chain: (2,2) -> (3,2) -> (4,2)
-        flow_board[2][2] = {{"owner", "circle"}, {"side", "river"}, {"orientation", "horizontal"}};
-        flow_board[2][3] = {{"owner", "circle"}, {"side", "river"}, {"orientation", "horizontal"}};
-        flow_board[2][4] = {{"owner", "circle"}, {"side", "river"}, {"orientation", "horizontal"}};
-        
-        // Add a piece that can use the flow
-        flow_board[1][1] = {{"owner", "circle"}, {"side", "stone"}, {"orientation", "horizontal"}};
-        
-        const auto& flow_moves = moveGen.generateAllMoves(flow_board, "circle", 7, 7, test_score_cols);
-        std::cout << "✓ Generated " << flow_moves.size() << " moves with river flow\n";
-        
-        // Count flow-based moves (moves that go beyond adjacent cells)
-        int flow_move_count = 0;
-        for (const auto& move : flow_moves) {
-            if (move.action == "move") {
-                int dx = std::abs(move.to[0] - move.from[0]);
-                int dy = std::abs(move.to[1] - move.from[1]);
-                if (dx > 1 || dy > 1) {  // Non-adjacent move = flow move
-                    flow_move_count++;
-                }
-            }
-        }
-        std::cout << "✓ Found " << flow_move_count << " river flow-based moves\n";
-        
-        // Test 3: Move type distribution
-        std::cout << "\nTest 3: Move Type Distribution\n";
-        int move_count = 0, push_count = 0, flip_count = 0, rotate_count = 0;
-        
-        for (const auto& move : circle_moves) {
-            if (move.action == "move") move_count++;
-            else if (move.action == "push") push_count++;
-            else if (move.action == "flip") flip_count++;
-            else if (move.action == "rotate") rotate_count++;
-        }
-        
-        std::cout << "✓ Move distribution:\n";
-        std::cout << "  - Regular moves: " << move_count << "\n";
-        std::cout << "  - Push moves: " << push_count << "\n";
-        std::cout << "  - Flip moves: " << flip_count << "\n";
-        std::cout << "  - Rotate moves: " << rotate_count << "\n";
-        
-        std::cout << "\n🎉 ALL MOVE GENERATOR TESTS COMPLETED! 🎉\n";
-        std::cout << "=========================================\n\n";
-    }
 
-    // Test Phase 3 MoveGenerator features
-    void testMoveGen3() {
-        std::cout << "\n🚀 TESTING PHASE 3 MOVE GENERATOR 🚀\n";
-        std::cout << "=====================================\n";
-        
-        // Create test board using the correct format (map-based)
-        std::vector<std::vector<std::map<std::string, std::string>>> test_board(7, 
-            std::vector<std::map<std::string, std::string>>(7));
-        
-        // Add test pieces
-        test_board[2][0] = {{"owner", "circle"}, {"side", "stone"}, {"orientation", "horizontal"}};
-        test_board[2][1] = {{"owner", "cross"}, {"side", "stone"}, {"orientation", "horizontal"}};
-        test_board[2][5] = {{"owner", "circle"}, {"side", "river"}, {"orientation", "vertical"}};
-        test_board[3][2] = {{"owner", "circle"}, {"side", "stone"}, {"orientation", "horizontal"}};
-        test_board[3][3] = {{"owner", "cross"}, {"side", "river"}, {"orientation", "horizontal"}};
-        test_board[4][1] = {{"owner", "cross"}, {"side", "stone"}, {"orientation", "horizontal"}};
-        test_board[4][4] = {{"owner", "circle"}, {"side", "stone"}, {"orientation", "horizontal"}};
-        
-        std::vector<int> score_cols = {0, 1, 2, 3, 4, 5, 6};
-        MoveGenerator moveGen;
-        
-        std::cout << "Test 1: Safety Checks\n";
-        
-        // Test flip safety with correct parameters (using all required parameters)
-        bool flipSafeH = moveGen.isFlipSafe(test_board, 0, 2, "circle", 7, 7, score_cols, "horizontal");
-        bool flipSafeV = moveGen.isFlipSafe(test_board, 0, 2, "circle", 7, 7, score_cols, "vertical");
-        std::cout << "✓ Flip safety (circle stone -> horizontal): " << (flipSafeH ? "SAFE" : "UNSAFE") << "\n";
-        std::cout << "✓ Flip safety (circle stone -> vertical): " << (flipSafeV ? "SAFE" : "UNSAFE") << "\n";
-        
-        // Test rotate safety for rivers (using all required parameters)
-        bool rotateSafe = moveGen.isRotateSafe(test_board, 5, 2, "circle", 7, 7, score_cols, "");
-        std::cout << "✓ Rotate safety (circle river): " << (rotateSafe ? "SAFE" : "UNSAFE") << "\n";
-        
-        std::cout << "\n🎉 PHASE 3 TESTS COMPLETED! 🎉\n";
-        std::cout << "==============================\n\n";
-    }
-
-    // Test BoardEvaluator functionality
-    void testBoardEvaluator() {
-        std::cout << "\n📊 TESTING BOARD EVALUATOR 📊\n";
-        std::cout << "===============================\n";
-        
-        // Create test scenarios
-        GameState gameState(7, 7);
-        std::vector<int> score_cols = {0, 1, 2, 3, 4, 5, 6};
-        
-        std::cout << "Test 1: Basic Evaluation\n";
-        
-        // Test empty board evaluation
-        float empty_score_circle = evaluator.basicEvaluateBoard(gameState, true);
-        float empty_score_square = evaluator.basicEvaluateBoard(gameState, false);
-        
-        std::cout << "✓ Empty board evaluation (circle): " << empty_score_circle << "\n";
-        std::cout << "✓ Empty board evaluation (square): " << empty_score_square << "\n";
-        
-        std::cout << "\nTest 2: Scoring Area Evaluation\n";
-        
-        // Add stones in scoring areas
-        gameState.setPiece(2, 1, CIRCLE_STONE);  // Circle stone in square scoring area
-        gameState.setPiece(3, 5, SQUARE_STONE);  // Square stone in circle scoring area
-        
-        float scoring_score_circle = evaluator.basicEvaluateBoard(gameState, true);
-        float scoring_score_square = evaluator.basicEvaluateBoard(gameState, false);
-        
-        std::cout << "✓ With scoring stones (circle): " << scoring_score_circle << "\n";
-        std::cout << "✓ With scoring stones (square): " << scoring_score_square << "\n";
-        std::cout << "✓ Circle advantage: " << (scoring_score_circle - empty_score_circle) << "\n";
-        std::cout << "✓ Square disadvantage: " << (scoring_score_square - empty_score_square) << "\n";
-        
-        std::cout << "\nTest 3: Positional Evaluation\n";
-        
-        // Add stones in various positions
-        GameState positionState(7, 7);
-        positionState.setPiece(1, 1, CIRCLE_STONE);  // Circle stone near top
-        positionState.setPiece(4, 5, CIRCLE_STONE);  // Circle stone near bottom
-        positionState.setPiece(1, 5, SQUARE_STONE);  // Square stone near bottom
-        positionState.setPiece(4, 1, SQUARE_STONE);  // Square stone near top
-        
-        float pos_score_circle = evaluator.basicEvaluateBoard(positionState, true);
-        float pos_score_square = evaluator.basicEvaluateBoard(positionState, false);
-        
-        std::cout << "✓ Positional evaluation (circle): " << pos_score_circle << "\n";
-        std::cout << "✓ Positional evaluation (square): " << pos_score_square << "\n";
-        
-        std::cout << "\nTest 4: Evaluation Caching\n";
-        
-        // Test cache performance
-        auto start_time = std::chrono::high_resolution_clock::now();
-        for (int i = 0; i < 1000; ++i) {
-            evaluator.basicEvaluateBoard(gameState, true);
-        }
-        auto end_time = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-        
-        std::cout << "✓ 1000 cached evaluations took: " << duration.count() << " microseconds\n";
-        std::cout << "✓ Cache size: " << evaluator.getCacheSize() << " entries\n";
-        
-        std::cout << "\nTest 5: Scaffold Method Verification\n";
-        
-        // Test all scaffold methods exist and return 0
-        float material = evaluator.evaluateMaterial(gameState, true);
-        float position = evaluator.evaluatePosition(gameState, true);  
-        float threats = evaluator.evaluateThreats(gameState, true);
-        float mobility = evaluator.evaluateMobility(gameState, true);
-        float rivers = evaluator.evaluateRiverControl(gameState, true);
-        float safety = evaluator.evaluateSafety(gameState, true);
-        
-        std::cout << "✓ Material evaluation scaffold: " << material << " (expected: 0)\n";
-        std::cout << "✓ Position evaluation scaffold: " << position << " (expected: 0)\n";
-        std::cout << "✓ Threats evaluation scaffold: " << threats << " (expected: 0)\n";
-        std::cout << "✓ Mobility evaluation scaffold: " << mobility << " (expected: 0)\n";
-        std::cout << "✓ River control scaffold: " << rivers << " (expected: 0)\n";
-        std::cout << "✓ Safety evaluation scaffold: " << safety << " (expected: 0)\n";
-        
-        // Clear cache for clean state
-        evaluator.clearCache();
-        
-        std::cout << "\n🎉 BOARD EVALUATOR TESTS COMPLETED! 🎉\n";
-        std::cout << "=======================================\n\n";
-    }
-
-    // Test GameState functionality
-    void testGameState() {
-        std::cout << "\n🧪 TESTING GAMESTATE CLASS 🧪\n";
-        std::cout << "================================\n";
-        
-        // Test 1: Basic construction and initialization
-        std::cout << "Test 1: Basic Construction\n";
-        GameState state(10, 8);
-        std::cout << "✓ Created GameState (10x8)\n";
-        std::cout << "✓ Rows: " << state.getRows() << ", Cols: " << state.getCols() << "\n";
-        
-        // Test 2: Piece encoding and placement
-        std::cout << "\nTest 2: Piece Encoding\n";
-        state.setPiece(1, 1, CIRCLE_STONE);
-        state.setPiece(2, 2, SQUARE_RIVER_H);
-        state.setPiece(3, 3, CIRCLE_RIVER_V);
-        
-        std::cout << "✓ Placed pieces:\n";
-        std::cout << "  (1,1): " << (int)state.getPiece(1,1) << " (should be 1 - CIRCLE_STONE)\n";
-        std::cout << "  (2,2): " << (int)state.getPiece(2,2) << " (should be 5 - SQUARE_RIVER_H)\n";
-        std::cout << "  (3,3): " << (int)state.getPiece(3,3) << " (should be 4 - CIRCLE_RIVER_V)\n";
-        
-        // Test 3: Utility functions
-        std::cout << "\nTest 3: Utility Functions\n";
-        std::cout << "✓ isPlayerPiece(1,1, true): " << (state.isPlayerPiece(1,1,true) ? "YES" : "NO") << "\n";
-        std::cout << "✓ isPlayerPiece(2,2, true): " << (state.isPlayerPiece(2,2,true) ? "YES" : "NO") << "\n";
-        std::cout << "✓ isEmpty(0,0): " << (state.isEmpty(0,0) ? "YES" : "NO") << "\n";
-        std::cout << "✓ isEmpty(1,1): " << (state.isEmpty(1,1) ? "YES" : "NO") << "\n";
-        
-        // Test 4: Move operations
-        std::cout << "\nTest 4: Move Operations\n";
-        uint64_t original_hash = state.getHash();
-        std::cout << "✓ Original hash: " << original_hash << "\n";
-        
-        state.applyBasicMove(1, 1, 0, 0);  // Move circle stone
-        uint64_t new_hash = state.getHash();
-        std::cout << "✓ After move hash: " << new_hash << " (changed: " << (original_hash != new_hash ? "YES" : "NO") << ")\n";
-        std::cout << "✓ Piece moved to (0,0): " << (int)state.getPiece(0,0) << "\n";
-        std::cout << "✓ Old position (1,1) empty: " << (state.isEmpty(1,1) ? "YES" : "NO") << "\n";
-        
-        // Test 5: Flip operations
-        std::cout << "\nTest 5: Flip Operations\n";
-        state.applyFlip(0, 0);  // Flip stone to river
-        std::cout << "✓ After flip: " << (int)state.getPiece(0,0) << " (should be 3 - CIRCLE_RIVER_H)\n";
-        
-        state.applyFlip(0, 0, "vertical");  // Flip back to stone (since it's now river)
-        std::cout << "✓ After flip back: " << (int)state.getPiece(0,0) << " (should be 1 - CIRCLE_STONE)\n";
-        
-        // Test 6: Rotate operations
-        std::cout << "\nTest 6: Rotate Operations\n";
-        state.applyFlip(0, 0, "horizontal");  // Make it a river first
-        std::cout << "✓ Made river: " << (int)state.getPiece(0,0) << "\n";
-        
-        state.applyRotate(0, 0);  // Rotate it
-        std::cout << "✓ After rotate: " << (int)state.getPiece(0,0) << " (orientation changed)\n";
-        
-        // Test 7: Copy and clone
-        std::cout << "\nTest 7: Copy Operations\n";
-        GameState copy = state.clone();
-        std::cout << "✓ Cloned successfully\n";
-        std::cout << "✓ Original hash: " << state.getHash() << "\n";
-        std::cout << "✓ Copy hash: " << copy.getHash() << " (same: " << (state.getHash() == copy.getHash() ? "YES" : "NO") << ")\n";
-        
-        // Test 8: Python board loading
-        std::cout << "\nTest 8: Python Board Loading\n";
-        std::vector<std::vector<std::map<std::string, std::string>>> python_board(3, 
-            std::vector<std::map<std::string, std::string>>(3));
-        
-        // Add a test piece
-        python_board[0][0] = {{"owner", "circle"}, {"side", "stone"}, {"orientation", "horizontal"}};
-        python_board[1][1] = {{"owner", "square"}, {"side", "river"}, {"orientation", "vertical"}};
-        
-        GameState pythonState(3, 3);
-        pythonState.loadFromPython(python_board);
-        
-        std::cout << "✓ Loaded from Python board:\n";
-        std::cout << "  (0,0): " << (int)pythonState.getPiece(0,0) << " (should be 1)\n";
-        std::cout << "  (1,1): " << (int)pythonState.getPiece(1,1) << " (should be 6)\n";
-        
-        // Test 9: Scoring and win conditions
-        std::cout << "\nTest 9: Scoring System\n";
-        GameState scoringState(13, 12);  // Default game size
-        
-        // Place some stones in scoring areas
-        const auto& score_cols = scoringState.getScoreCols();
-        std::cout << "✓ Score columns: ";
-        for (int col : score_cols) std::cout << col << " ";
-        std::cout << "\n";
-        
-        // Place circle stones in their scoring area (top)
-        for (int i = 0; i < 3; ++i) {
-            scoringState.setPiece(score_cols[i], 2, CIRCLE_STONE);  // Row 2 is top score row
-        }
-        
-        int circle_score = scoringState.countScoringPieces(true);
-        std::cout << "✓ Circle scoring pieces: " << circle_score << " (should be 3)\n";
-        
-        std::string winner = scoringState.getWinner();
-        std::cout << "✓ Current winner: " << (winner.empty() ? "NONE" : winner) << "\n";
-        
-        std::cout << "\n🎉 ALL GAMESTATE TESTS COMPLETED! 🎉\n";
-        std::cout << "=====================================\n\n";
-    }
-};
-
-// ---- Piece Utilities Testing Function ----
-void testPieceUtilities() {
-    std::cout << "\n⚙️ TESTING PIECE UTILITIES ⚙️\n";
-    std::cout << "=============================\n";
-    
-    // Test 1: Basic type checking
-    std::cout << "Test 1: Basic Type Checking\n";
-    std::cout << "✓ isEmpty(EMPTY): " << (isEmpty(EMPTY) ? "YES" : "NO") << "\n";
-    std::cout << "✓ isPieceStone(CIRCLE_STONE): " << (isPieceStone(CIRCLE_STONE) ? "YES" : "NO") << "\n";
-    std::cout << "✓ isPieceRiver(CIRCLE_RIVER_H): " << (isPieceRiver(CIRCLE_RIVER_H) ? "YES" : "NO") << "\n";
-    
-    // Test 2: Ownership checking
-    std::cout << "\nTest 2: Ownership Checking\n";
-    std::cout << "✓ isPieceOwner(CIRCLE_STONE, \"circle\"): " << (isPieceOwner(CIRCLE_STONE, "circle") ? "YES" : "NO") << "\n";
-    std::cout << "✓ isPieceOwner(SQUARE_STONE, \"circle\"): " << (isPieceOwner(SQUARE_STONE, "circle") ? "YES" : "NO") << "\n";
-    std::cout << "✓ isPieceOwner(CIRCLE_RIVER_V, \"circle\"): " << (isPieceOwner(CIRCLE_RIVER_V, "circle") ? "YES" : "NO") << "\n";
-    std::cout << "✓ isPieceOwner(SQUARE_RIVER_H, \"square\"): " << (isPieceOwner(SQUARE_RIVER_H, "square") ? "YES" : "NO") << "\n";
-    
-    // Test 3: Fast ownership checking
-    std::cout << "\nTest 3: Fast Ownership Checking\n";
-    std::cout << "✓ isPieceOwnerFast(CIRCLE_STONE, true): " << (isPieceOwnerFast(CIRCLE_STONE, true) ? "YES" : "NO") << "\n";
-    std::cout << "✓ isPieceOwnerFast(SQUARE_STONE, false): " << (isPieceOwnerFast(SQUARE_STONE, false) ? "YES" : "NO") << "\n";
-    std::cout << "✓ isPieceOwnerFast(CIRCLE_RIVER_H, true): " << (isPieceOwnerFast(CIRCLE_RIVER_H, true) ? "YES" : "NO") << "\n";
-    std::cout << "✓ isPieceOwnerFast(SQUARE_RIVER_V, false): " << (isPieceOwnerFast(SQUARE_RIVER_V, false) ? "YES" : "NO") << "\n";
-    
-    // Test 4: River orientation
-    std::cout << "\nTest 4: River Orientation\n";
-    std::cout << "✓ getRiverOrientation(CIRCLE_RIVER_H): \"" << getRiverOrientation(CIRCLE_RIVER_H) << "\"\n";
-    std::cout << "✓ getRiverOrientation(SQUARE_RIVER_V): \"" << getRiverOrientation(SQUARE_RIVER_V) << "\"\n";
-    std::cout << "✓ isRiverHorizontal(CIRCLE_RIVER_H): " << (isRiverHorizontal(CIRCLE_RIVER_H) ? "YES" : "NO") << "\n";
-    std::cout << "✓ isRiverHorizontal(SQUARE_RIVER_V): " << (isRiverHorizontal(SQUARE_RIVER_V) ? "YES" : "NO") << "\n";
-    
-    // Test 5: Piece flipping
-    std::cout << "\nTest 5: Piece Flipping\n";
-    uint8_t flipped_h = flipPiece(CIRCLE_STONE, "horizontal");
-    uint8_t flipped_v = flipPiece(SQUARE_STONE, "vertical");
-    std::cout << "✓ flipPiece(CIRCLE_STONE, \"horizontal\"): " << (int)flipped_h << " (should be " << (int)CIRCLE_RIVER_H << ")\n";
-    std::cout << "✓ flipPiece(SQUARE_STONE, \"vertical\"): " << (int)flipped_v << " (should be " << (int)SQUARE_RIVER_V << ")\n";
-    
-    // Test river to stone
-    uint8_t back_to_stone = flipPiece(CIRCLE_RIVER_H);
-    std::cout << "✓ flipPiece(CIRCLE_RIVER_H) back to stone: " << (int)back_to_stone << " (should be " << (int)CIRCLE_STONE << ")\n";
-    
-    // Test 6: Piece rotation
-    std::cout << "\nTest 6: Piece Rotation\n";
-    uint8_t rotated_h = rotatePiece(CIRCLE_RIVER_H);
-    uint8_t rotated_v = rotatePiece(SQUARE_RIVER_V);
-    std::cout << "✓ rotatePiece(CIRCLE_RIVER_H): " << (int)rotated_h << " (should be " << (int)CIRCLE_RIVER_V << ")\n";
-    std::cout << "✓ rotatePiece(SQUARE_RIVER_V): " << (int)rotated_v << " (should be " << (int)SQUARE_RIVER_H << ")\n";
-    
-    // Test 7: Utility functions
-    std::cout << "\nTest 7: Utility Functions\n";
-    std::cout << "✓ getPieceOwnerFlag(CIRCLE_STONE): " << (getPieceOwnerFlag(CIRCLE_STONE) ? "true" : "false") << " (circle)\n";
-    std::cout << "✓ getPieceOwnerFlag(SQUARE_RIVER_H): " << (getPieceOwnerFlag(SQUARE_RIVER_H) ? "true" : "false") << " (square)\n";
-    std::cout << "✓ getPieceTypeIndex(CIRCLE_STONE): " << getPieceTypeIndex(CIRCLE_STONE) << " (stone=1)\n";
-    std::cout << "✓ getPieceTypeIndex(SQUARE_RIVER_H): " << getPieceTypeIndex(SQUARE_RIVER_H) << " (river_h=2)\n";
-    std::cout << "✓ getPieceTypeIndex(CIRCLE_RIVER_V): " << getPieceTypeIndex(CIRCLE_RIVER_V) << " (river_v=3)\n";
-    
-    // Test 8: Performance comparison
-    std::cout << "\nTest 8: Performance Validation\n";
-    bool consistent = true;
-    
-    // Verify consistency between fast and regular ownership checks
-    for (uint8_t piece = 1; piece <= 6; ++piece) {
-        bool regular_circle = isPieceOwner(piece, "circle");
-        bool fast_circle = isPieceOwnerFast(piece, true);
-        if (regular_circle != fast_circle) {
-            consistent = false;
-            std::cout << "✗ Inconsistency for piece " << (int)piece << "\n";
-        }
-    }
-    
-    std::cout << "✓ Fast vs Regular ownership check consistency: " << (consistent ? "PASS" : "FAIL") << "\n";
-    
-    std::cout << "\n🎉 ALL PIECE UTILITY TESTS COMPLETED! 🎉\n";
-    std::cout << "=======================================\n\n";
-}
-
-// ---- GameState Testing Function ----
-void runGameStateTests() {
-    StudentAgent testAgent("circle");
-    testAgent.testGameState();
-}
-
-// ---- MoveGenerator Testing Function ----
-void runMoveGeneratorTests() {
-    StudentAgent testAgent("circle");
-    testAgent.testMoveGenerator();
-}
-
-// ---- Combined Testing Function ----
-void runAllTests() {
-    testPieceUtilities();
-    runGameStateTests();
-    runMoveGeneratorTests();
-    
-    // Create a StudentAgent instance to test Phase 3 & 4 features
-    StudentAgent agent("circle");
-    agent.testMoveGen3();
-    agent.testBoardEvaluator();
-}
 
 // ---- PyBind11 bindings ----
 PYBIND11_MODULE(student_agent_module, m) {
@@ -2466,15 +2300,5 @@ PYBIND11_MODULE(student_agent_module, m) {
 
     py::class_<StudentAgent>(m, "StudentAgent")
         .def(py::init<std::string>())
-        .def("choose", &StudentAgent::choose)
-        .def("testGameState", &StudentAgent::testGameState)
-        .def("testMoveGenerator", &StudentAgent::testMoveGenerator)
-        .def("testMoveGen3", &StudentAgent::testMoveGen3)
-        .def("testBoardEvaluator", &StudentAgent::testBoardEvaluator);
-    
-    // Add standalone test functions
-    m.def("runGameStateTests", &runGameStateTests, "Run comprehensive GameState tests");
-    m.def("testPieceUtilities", &testPieceUtilities, "Test piece manipulation utilities");
-    m.def("runMoveGeneratorTests", &runMoveGeneratorTests, "Test move generation engine");
-    m.def("runAllTests", &runAllTests, "Run all comprehensive tests");
+        .def("choose", &StudentAgent::choose);
 }
