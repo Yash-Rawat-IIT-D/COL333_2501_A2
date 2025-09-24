@@ -413,6 +413,7 @@ private:
     
     int getBottomScoreRow() const { return rows - 3; }
     
+<<<<<<< Updated upstream
     // Position tracking helpers
     void addPiecePosition(int x, int y, uint8_t piece) {
         if (piece == EMPTY) return;
@@ -437,11 +438,14 @@ private:
     void initializePositionTracking() {
         circle_piece_positions.clear();
         square_piece_positions.clear();
+=======
+>>>>>>> Stashed changes
     // // Hash computation for transposition tables
     // void computeHash() {
     //     hash_value = 0;
     //     std::hash<uint64_t> hasher;
         
+<<<<<<< Updated upstream
         for (int y = 0; y < rows; ++y) {
             for (int x = 0; x < cols; ++x) {
                 uint8_t piece = board[y][x];
@@ -451,6 +455,18 @@ private:
             }
         }
     }
+=======
+    //     for (int y = 0; y < rows; ++y) {
+    //         for (int x = 0; x < cols; ++x) {
+    //             if (board[y][x] != EMPTY) {
+    //                 // Zobrist-like hashing: position + piece type
+    //                 uint64_t piece_hash = (uint64_t(board[y][x]) << 16) | (uint64_t(y) << 8) | uint64_t(x);
+    //                 hash_value ^= hasher(piece_hash);
+    //             }
+    //         }
+    //     }
+    // }
+>>>>>>> Stashed changes
     
     // Hash computation for transposition tables
     // void computeHash() {
@@ -480,7 +496,10 @@ public:
             score_cols.push_back(i);
         }
         
+<<<<<<< Updated upstream
         initializePositionTracking();
+=======
+>>>>>>> Stashed changes
         // computeHash();
     }
     
@@ -520,6 +539,7 @@ public:
                 }
             }
         }
+<<<<<<< Updated upstream
         // initializePositionTracking();
         // computeHash();
     }
@@ -530,6 +550,10 @@ public:
     //     hash_value ^= (uint64_t(piece) << (from_x + from_y * cols)) * 0x9e3779b97f4a7c15ULL;
     //     hash_value ^= (uint64_t(piece) << (to_x + to_y * cols)) * 0x9e3779b97f4a7c15ULL;
     // }
+=======
+        // computeHash();
+    }
+>>>>>>> Stashed changes
 
     
     // Deep copy for search tree
@@ -689,9 +713,12 @@ public:
             
             board[to_y][to_x] = piece;
             board[from_y][from_x] = EMPTY;
+<<<<<<< Updated upstream
             
             addPiecePosition(to_x, to_y, piece);
             
+=======
+>>>>>>> Stashed changes
             // computeHash();
         }
     }
@@ -714,10 +741,13 @@ public:
             board[to_y][to_x] = our_piece;
             // Clear original position
             board[from_y][from_x] = EMPTY;
+<<<<<<< Updated upstream
             
             addPiecePosition(to_x, to_y, our_piece);
             addPiecePosition(push_x, push_y, pushed_piece);
             
+=======
+>>>>>>> Stashed changes
             // computeHash();
         }
     }
@@ -742,12 +772,15 @@ public:
             // River -> Stone
             new_piece = isCircleOwner ? CIRCLE_STONE : SQUARE_STONE;
         }
+<<<<<<< Updated upstream
         
         // Update position tracking (piece stays in same position but changes type)
         removePiecePosition(x, y, old_piece);
         board[y][x] = new_piece;
         addPiecePosition(x, y, new_piece);
         
+=======
+>>>>>>> Stashed changes
         // computeHash();
     }
     
@@ -771,12 +804,15 @@ public:
         } else {
             return; // Invalid piece for rotation
         }
+<<<<<<< Updated upstream
         
         // Update position tracking (piece stays in same position but changes orientation)
         removePiecePosition(x, y, old_piece);
         board[y][x] = new_piece;
         addPiecePosition(x, y, new_piece);
         
+=======
+>>>>>>> Stashed changes
         // computeHash();
     }
     
@@ -1748,6 +1784,7 @@ private:
     static constexpr int MAX_BOARD_SIZE = 20;
     
     std::unordered_map<uint64_t, TTEntry> table;
+<<<<<<< Updated upstream
 // class TranspositionTable {
 // private:
 //     static constexpr size_t TABLE_SIZE = 1024 * 256;  // 256K entries
@@ -1761,6 +1798,13 @@ private:
 //     static uint64_t piece_square_table[7][MAX_BOARD_SIZE][MAX_BOARD_SIZE];
 //     static uint64_t player_to_move_key;
 //     static bool zobrist_initialized;
+=======
+    
+    // Zobrist hash tables (minimal implementation)
+    static uint64_t piece_square_table[7][MAX_BOARD_SIZE][MAX_BOARD_SIZE];
+    static uint64_t player_to_move_key;
+    static bool zobrist_initialized;
+>>>>>>> Stashed changes
     
 //     static void initializeZobrist() {
 //         if (zobrist_initialized) return;
@@ -1793,15 +1837,39 @@ public:
 //         clear();
 //     }
     
+<<<<<<< Updated upstream
 //     void clear() {
 //         std::fill(table.begin(), table.end(), TTEntry{});
 //         current_age++;
 //     }
+=======
+    void clear() {
+        table.clear();
+    }
+>>>>>>> Stashed changes
     
     void newSearch() {
         // Optionally clear old entries if table gets too large
         if (table.size() > MAX_TABLE_SIZE) {
             table.clear();
+<<<<<<< Updated upstream
+=======
+        }
+    }
+    
+    // Compute Zobrist hash for a game state
+    uint64_t computeHash(const GameState& state, bool isCircleToMove) const {
+        uint64_t hash = 0;
+        
+        // Hash piece positions
+        for (int y = 0; y < state.getRows(); ++y) {
+            for (int x = 0; x < state.getCols(); ++x) {
+                uint8_t piece = state.getPiece(x, y);
+                if (piece != EMPTY && y < MAX_BOARD_SIZE && x < MAX_BOARD_SIZE) {
+                    hash ^= piece_square_table[piece][y][x];
+                }
+            }
+>>>>>>> Stashed changes
         }
     }
 //     void newSearch() {
@@ -1812,6 +1880,7 @@ public:
 //     uint64_t computeHash(const GameState& state, bool isCircleToMove) const {
 //         uint64_t hash = 0;
         
+<<<<<<< Updated upstream
 //         // Hash circle pieces
 //         for (const auto& pos : state.getCirclePiecePositions()) {
 //             int x = pos.first, y = pos.second;
@@ -1842,6 +1911,8 @@ public:
 //     bool probe(uint64_t hash_key, int depth, float alpha, float beta, 
 //                float& evaluation, Move& best_move) const {
         
+=======
+>>>>>>> Stashed changes
         auto it = table.find(hash_key);
         if (it == table.end() || it->second.depth < depth) {
             return false;
@@ -1849,11 +1920,14 @@ public:
 //         size_t index = hash_key & TABLE_MASK;
 //         const TTEntry& entry = table[index];
         
+<<<<<<< Updated upstream
 //         // Check if entry is valid and matches our position
 //         if (entry.hash_key != hash_key || entry.depth < depth) {
 //             return false;
 //         }
         
+=======
+>>>>>>> Stashed changes
         const TTEntry& entry = it->second;
         best_move = entry.best_move;
 //         best_move = entry.best_move;
@@ -1882,9 +1956,15 @@ public:
 //         return false;  // Can't use this entry's evaluation
 //     }
     
+<<<<<<< Updated upstream
 //     // Store position in transposition table
 //     void store(uint64_t hash_key, float evaluation, const Move& best_move, 
 //                int depth, float original_alpha, float beta) {
+=======
+    // Store position in transposition table
+    void store(uint64_t hash_key, float evaluation, const Move& best_move, 
+               int depth, float original_alpha, float beta) {
+>>>>>>> Stashed changes
         
         // Determine node type
         TTEntry::NodeType node_type;
@@ -1898,6 +1978,7 @@ public:
 //         size_t index = hash_key & TABLE_MASK;
 //         TTEntry& entry = table[index];
         
+<<<<<<< Updated upstream
 //         // Determine node type
 //         TTEntry::NodeType node_type;
 //         if (evaluation <= original_alpha) {
@@ -1908,6 +1989,8 @@ public:
 //             node_type = TTEntry::EXACT;
 //         }
         
+=======
+>>>>>>> Stashed changes
         // Check if we should replace existing entry
         auto it = table.find(hash_key);
         if (it == table.end() || it->second.depth <= depth) {
@@ -1973,7 +2056,10 @@ public:
         
         // Clear PV moves from previous search
         clearPVMoves();
+<<<<<<< Updated upstream
         // tt.newSearch();
+=======
+>>>>>>> Stashed changes
         
         // Reset search statistics
         nodes_searched = 0;
@@ -2017,8 +2103,11 @@ public:
             
             g_logger.log(LogLevel::DEBUG, "MINIMAX: Searching at depth " + std::to_string(depth));
             int nodes_before = nodes_searched;
+<<<<<<< Updated upstream
         for (int depth = 1; depth <= MAX_DEPTH; ++depth) {  
             if (timeManager.shouldStop()) break;
+=======
+>>>>>>> Stashed changes
             
             SearchResult currentResult = searchAtDepth(position, depth, isCirclePlayer, rootMoves);
             
@@ -2259,6 +2348,7 @@ private:
         
         // Order moves using PV from previous iteration + TT move
         std::vector<Move> orderedMoves = orderMovesWithPV(moves, position_hash, current_depth);
+<<<<<<< Updated upstream
         // Move ordering: try TT best move first
         // if (!tt_best_move.action.empty()) {
         //     auto it = std::find(moves.begin(), moves.end(), tt_best_move);
@@ -2266,6 +2356,8 @@ private:
         //         std::swap(*it, moves[0]);
         //     }
         // }
+=======
+>>>>>>> Stashed changes
         
         float maxEval = -1000000.0f;
         Move best_move = orderedMoves[0];  // Default best move
@@ -2314,7 +2406,10 @@ private:
         if (!best_move.action.empty()) {
             storePVMove(position_hash, current_depth, best_move);
         }
+<<<<<<< Updated upstream
         // tt.store(position_hash, maxEval, best_move, depth, original_alpha, beta);
+=======
+>>>>>>> Stashed changes
         
         return maxEval;
     }
