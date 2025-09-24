@@ -437,6 +437,10 @@ private:
     void initializePositionTracking() {
         circle_piece_positions.clear();
         square_piece_positions.clear();
+    // // Hash computation for transposition tables
+    // void computeHash() {
+    //     hash_value = 0;
+    //     std::hash<uint64_t> hasher;
         
         for (int y = 0; y < rows; ++y) {
             for (int x = 0; x < cols; ++x) {
@@ -516,7 +520,7 @@ public:
                 }
             }
         }
-        initializePositionTracking();
+        // initializePositionTracking();
         // computeHash();
     }
     
@@ -526,6 +530,7 @@ public:
     //     hash_value ^= (uint64_t(piece) << (from_x + from_y * cols)) * 0x9e3779b97f4a7c15ULL;
     //     hash_value ^= (uint64_t(piece) << (to_x + to_y * cols)) * 0x9e3779b97f4a7c15ULL;
     // }
+
     
     // Deep copy for search tree
     GameState clone() const {
@@ -807,6 +812,11 @@ struct Move {
     bool operator==(const Move& other) const {
         return action == other.action && from == other.from && to == other.to && 
                pushed_to == other.pushed_to && orientation == other.orientation;
+    }
+    
+    // Inequality operator for comparison
+    bool operator!=(const Move& other) const {
+        return !(*this == other);
     }
 };
 
@@ -1661,6 +1671,17 @@ private:
         // Safety check: always reserve emergency buffer
         // float usable_time = std::max(0.1f, remaining_time - emergency_buffer);
         
+        // Basic time allocation strategy
+        if (remaining_time > 30.0f) {
+            // Early/mid game: use moderate time
+            return std::min(3.0f, usable_time * 0.15f);
+        } else if (remaining_time > 10.0f) {
+            // Late game: be more aggressive with time usage
+            return std::min(6.0f, usable_time * 0.25f);
+        } else {
+            // Endgame: use most remaining time but keep emergency reserve
+            return std::min(remaining_time * 0.5f, usable_time);
+        }
         // // Basic time allocation strategy
         // if (remaining_time > 30.0f) {
         //     // Early/mid game: use moderate time
@@ -1692,6 +1713,20 @@ struct SearchResult {
 
 // ==================== TRANSPOSITION TABLE ====================
 
+struct TTEntry {
+    float evaluation;
+    Move best_move;
+    int depth;
+    enum NodeType {
+        EXACT = 0,
+        LOWER_BOUND = 1,
+        UPPER_BOUND = 2
+    } node_type;
+    
+    TTEntry() : evaluation(0.0f), depth(-1), node_type(EXACT) {}
+    TTEntry(float eval, const Move& move, int d, NodeType type) 
+        : evaluation(eval), best_move(move), depth(d), node_type(type) {}
+};
 // struct TTEntry {
 //     uint64_t hash_key;
 //     float evaluation;
@@ -1707,6 +1742,12 @@ struct SearchResult {
 //     TTEntry() : hash_key(0), evaluation(0.0f), depth(-1), age(0), node_type(EXACT) {}
 // };
 
+class TranspositionTable {
+private:
+    static constexpr size_t MAX_TABLE_SIZE = 500000;  // 500K entries max
+    static constexpr int MAX_BOARD_SIZE = 20;
+    
+    std::unordered_map<uint64_t, TTEntry> table;
 // class TranspositionTable {
 // private:
 //     static constexpr size_t TABLE_SIZE = 1024 * 256;  // 256K entries
@@ -1740,6 +1781,11 @@ struct SearchResult {
 //         zobrist_initialized = true;
 //     }
     
+public:
+    TranspositionTable() {
+        initializeZobrist();
+        table.reserve(MAX_TABLE_SIZE);
+    }
 // public:
 //     TranspositionTable() : current_age(0) {
 //         table.resize(TABLE_SIZE);
@@ -1752,6 +1798,12 @@ struct SearchResult {
 //         current_age++;
 //     }
     
+    void newSearch() {
+        // Optionally clear old entries if table gets too large
+        if (table.size() > MAX_TABLE_SIZE) {
+            table.clear();
+        }
+    }
 //     void newSearch() {
 //         current_age++;
 //     }
@@ -1790,6 +1842,10 @@ struct SearchResult {
 //     bool probe(uint64_t hash_key, int depth, float alpha, float beta, 
 //                float& evaluation, Move& best_move) const {
         
+        auto it = table.find(hash_key);
+        if (it == table.end() || it->second.depth < depth) {
+            return false;
+        }
 //         size_t index = hash_key & TABLE_MASK;
 //         const TTEntry& entry = table[index];
         
@@ -1798,6 +1854,8 @@ struct SearchResult {
 //             return false;
 //         }
         
+        const TTEntry& entry = it->second;
+        best_move = entry.best_move;
 //         best_move = entry.best_move;
         
 //         // Check if we can use this evaluation based on node type
@@ -1828,6 +1886,15 @@ struct SearchResult {
 //     void store(uint64_t hash_key, float evaluation, const Move& best_move, 
 //                int depth, float original_alpha, float beta) {
         
+        // Determine node type
+        TTEntry::NodeType node_type;
+        if (evaluation <= original_alpha) {
+            node_type = TTEntry::UPPER_BOUND;
+        } else if (evaluation >= beta) {
+            node_type = TTEntry::LOWER_BOUND;
+        } else {
+            node_type = TTEntry::EXACT;
+        }
 //         size_t index = hash_key & TABLE_MASK;
 //         TTEntry& entry = table[index];
         
@@ -1841,6 +1908,17 @@ struct SearchResult {
 //             node_type = TTEntry::EXACT;
 //         }
         
+        // Check if we should replace existing entry
+        auto it = table.find(hash_key);
+        if (it == table.end() || it->second.depth <= depth) {
+            // Insert or replace with deeper search
+            table[hash_key] = TTEntry(evaluation, best_move, depth, node_type);
+        }
+    }
+    
+    // Get table statistics
+    size_t size() const { return table.size(); }
+};
 //         // Replace if empty, deeper, or much older
 //         bool should_replace = (entry.hash_key == 0) ||
 //                              (entry.depth <= depth) ||
@@ -1873,9 +1951,15 @@ private:
     int nodes_searched;
     int max_depth_reached;
     
+    // Principal Variation storage - stores best moves from previous iteration
+    // pv_moves[depth][position_hash] = best_move
+    std::vector<std::unordered_map<uint64_t, Move>> pv_moves;
+    
 public:
     MinimaxEngine(BoardEvaluator* eval, MoveGenerator* moveGen) 
-        : evaluator(eval), moveGenerator(moveGen), nodes_searched(0), max_depth_reached(0) {}
+        : evaluator(eval), moveGenerator(moveGen), nodes_searched(0), max_depth_reached(0) {
+        pv_moves.resize(10);  // Support up to depth 10
+    }
     
     // Main entry point: find best move using iterative deepening
     Move getBestMove(const GameState& position, const std::string& player, 
@@ -1885,6 +1969,10 @@ public:
         timeManager.startSearch(remaining_time, opponent_time);
         
         // Initialize TT for new search
+        tt.newSearch();
+        
+        // Clear PV moves from previous search
+        clearPVMoves();
         // tt.newSearch();
         
         // Reset search statistics
@@ -1894,15 +1982,23 @@ public:
         // Convert player string to boolean for consistency
         bool isCirclePlayer = (player == "circle");
         
+        g_logger.log(LogLevel::DEBUG, "MINIMAX: Starting search for " + player + 
+                    ", time=" + std::to_string(remaining_time) + "s");
+        
         // Get all legal moves for the root position
         std::vector<Move> rootMoves = generateMovesForPosition(position, player);
         
+        g_logger.log(LogLevel::DEBUG, "MINIMAX: Found " + std::to_string(rootMoves.size()) + 
+                    " legal moves at root");
+        
         if (rootMoves.empty()) {
+            g_logger.log(LogLevel::ERROR, "MINIMAX: No legal moves available!");
             // No legal moves - return a default move
             return {"move", {0,0}, {0,0}, {}, ""};
         }
         
         if (rootMoves.size() == 1) {
+            g_logger.log(LogLevel::INFO, "MINIMAX: Only one legal move, skipping search");
             // Only one legal move - no need to search
             return rootMoves[0];
         }
@@ -1911,24 +2007,119 @@ public:
         SearchResult bestResult;
         bestResult.bestMove = rootMoves[0];  // Default to first legal move
         
+        g_logger.log(LogLevel::DEBUG, "MINIMAX: Starting iterative deepening");
+        
+        for (int depth = 1; depth <= 6; ++depth) {  // Maximum depth of 6
+            if (timeManager.shouldStop()) {
+                g_logger.log(LogLevel::DEBUG, "MINIMAX: Time limit reached at depth " + std::to_string(depth));
+                break;
+            }
+            
+            g_logger.log(LogLevel::DEBUG, "MINIMAX: Searching at depth " + std::to_string(depth));
+            int nodes_before = nodes_searched;
         for (int depth = 1; depth <= MAX_DEPTH; ++depth) {  
             if (timeManager.shouldStop()) break;
             
             SearchResult currentResult = searchAtDepth(position, depth, isCirclePlayer, rootMoves);
             
+            int nodes_at_depth = nodes_searched - nodes_before;
+            g_logger.log(LogLevel::DEBUG, "MINIMAX: Depth " + std::to_string(depth) + 
+                        " completed, nodes=" + std::to_string(nodes_at_depth) + 
+                        ", eval=" + std::to_string(currentResult.evaluation) +
+                        ", move=" + currentResult.bestMove.action);
+            
             if (!currentResult.timeout_occurred) {
+                if (bestResult.bestMove != currentResult.bestMove) {
+                    g_logger.log(LogLevel::INFO, "MINIMAX: Best move changed from " + 
+                                bestResult.bestMove.action + " to " + currentResult.bestMove.action +
+                                " (eval: " + std::to_string(bestResult.evaluation) + " -> " + 
+                                std::to_string(currentResult.evaluation) + ")");
+                }
                 bestResult = currentResult;
                 max_depth_reached = depth;
             }
             
             // If we found a very good position, don't waste more time
-            if (bestResult.evaluation > 50.0f) break;
+            if (bestResult.evaluation > 50.0f) {
+                g_logger.log(LogLevel::DEBUG, "MINIMAX: Found winning position, stopping early");
+                break;
+            }
         }
+        
+        g_logger.log(LogLevel::INFO, "MINIMAX: Search complete - depth=" + std::to_string(max_depth_reached) +
+                    ", nodes=" + std::to_string(nodes_searched) + 
+                    ", TT_size=" + std::to_string(tt.size()) +
+                    ", time=" + std::to_string(timeManager.getElapsedTime()) + "s");
         
         return bestResult.bestMove;
     }
     
 private:
+    
+    // ========== PRINCIPAL VARIATION HELPER METHODS ==========
+    
+    // Get PV move for a position at a specific depth from previous iteration
+    Move getPVMove(uint64_t position_hash, int depth) const {
+        if (depth >= 0 && depth < pv_moves.size()) {
+            auto it = pv_moves[depth].find(position_hash);
+            if (it != pv_moves[depth].end()) {
+                return it->second;
+            }
+        }
+        return Move();  // Return empty move if not found
+    }
+    
+    // Store PV move for a position at a specific depth
+    void storePVMove(uint64_t position_hash, int depth, const Move& move) {
+        if (depth >= 0 && depth < pv_moves.size()) {
+            pv_moves[depth][position_hash] = move;
+        }
+    }
+    
+    // Clear PV moves for new search
+    void clearPVMoves() {
+        for (auto& pv_map : pv_moves) {
+            pv_map.clear();
+        }
+    }
+    
+    // Order moves using PV from previous iteration
+    std::vector<Move> orderMovesWithPV(const std::vector<Move>& moves, uint64_t position_hash, 
+                                      int current_depth) const {
+        if (moves.empty()) return moves;
+        
+        std::vector<Move> ordered_moves = moves;
+        
+        // Get PV move from previous iteration at this depth
+        Move pv_move = getPVMove(position_hash, current_depth);
+        
+        if (!pv_move.action.empty()) {
+            // Find PV move in current moves and move to front
+            auto it = std::find(ordered_moves.begin(), ordered_moves.end(), pv_move);
+            if (it != ordered_moves.end()) {
+                std::swap(*it, ordered_moves[0]);
+                g_logger.log(LogLevel::DEBUG, "MINIMAX: Using PV move at depth " + 
+                            std::to_string(current_depth) + ": " + pv_move.action);
+                return ordered_moves;
+            }
+        }
+        
+        // If no PV move found, try TT move ordering as fallback
+        Move tt_move;
+        float dummy_eval;
+        if (tt.probe(position_hash, current_depth, -1000000.0f, 1000000.0f, dummy_eval, tt_move)) {
+            if (!tt_move.action.empty()) {
+                auto it = std::find(ordered_moves.begin(), ordered_moves.end(), tt_move);
+                if (it != ordered_moves.end()) {
+                    std::swap(*it, ordered_moves[0]);
+                    g_logger.log(LogLevel::DEBUG, "MINIMAX: Using TT move at depth " + 
+                                std::to_string(current_depth) + ": " + tt_move.action);
+                }
+            }
+        }
+        
+        return ordered_moves;
+    }
     
     // CORRECTED searchAtDepth method
     SearchResult searchAtDepth(const GameState& position, int depth, bool isCirclePlayer, 
@@ -1941,21 +2132,38 @@ private:
         
         float alpha = -1000000.0f;  // Initialize alpha at root
         float beta = 1000000.0f;    // Initialize beta at root
+        int moves_evaluated = 0;
+        int cutoffs = 0;
         
-        for (const Move& move : rootMoves) {
+        // Order root moves using PV from previous iteration
+        uint64_t root_hash = tt.computeHash(position, isCirclePlayer);
+        std::vector<Move> orderedMoves = orderMovesWithPV(rootMoves, root_hash, 0);
+        
+        g_logger.log(LogLevel::DEBUG, "MINIMAX: Ordered " + std::to_string(orderedMoves.size()) + 
+                    " root moves for depth " + std::to_string(depth));
+        
+        for (const Move& move : orderedMoves) {
             if (timeManager.shouldStop()) {
                 bestResult.timeout_occurred = true;
+                g_logger.log(LogLevel::DEBUG, "MINIMAX: Timeout at root level after " + 
+                            std::to_string(moves_evaluated) + "/" + std::to_string(rootMoves.size()) + " moves");
                 break;
             }
             
             // Apply move to get new position
             GameState newPosition = position.clone();
             if (!applyMoveToPosition(newPosition, move)) {
+                g_logger.log(LogLevel::DEBUG, "MINIMAX: Invalid root move skipped: " + move.action);
                 continue;  // Invalid move, skip
             }
             
+            moves_evaluated++;
+            
             // Search this branch with current alpha-beta window
-            float evaluation = -negamax(newPosition, depth - 1, -beta, -alpha, !isCirclePlayer);
+            float evaluation = -negamax(newPosition, depth - 1, -beta, -alpha, !isCirclePlayer, 1);
+            
+            g_logger.log(LogLevel::DEBUG, "MINIMAX: Root move " + std::to_string(moves_evaluated) + 
+                        ": " + move.action + " eval=" + std::to_string(evaluation));
             
             // Update best move if this is better
             if (evaluation > bestResult.evaluation) {
@@ -1964,19 +2172,33 @@ private:
             }
             
             // Update alpha for next root moves (critical for pruning!)
+            float old_alpha = alpha;
             alpha = std::max(alpha, evaluation);
+            
+            if (alpha > old_alpha) {
+                g_logger.log(LogLevel::DEBUG, "MINIMAX: Alpha improved at root: " + 
+                            std::to_string(old_alpha) + " -> " + std::to_string(alpha));
+            }
             
             // Beta cutoff at root level (though rare with initial beta=+infinity)
             if (beta <= alpha) {
+                cutoffs++;
+                g_logger.log(LogLevel::DEBUG, "MINIMAX: Root beta cutoff! Remaining " + 
+                            std::to_string(rootMoves.size() - moves_evaluated) + " moves pruned");
                 break;  // Remaining root moves can be pruned
             }
         }
         
+        g_logger.log(LogLevel::DEBUG, "MINIMAX: Root search complete - evaluated=" + 
+                    std::to_string(moves_evaluated) + "/" + std::to_string(rootMoves.size()) + 
+                    ", cutoffs=" + std::to_string(cutoffs));
+        
         return bestResult;
     }
     
-    // Negamax algorithm with alpha-beta pruning and TT
-    float negamax(const GameState& position, int depth, float alpha, float beta, bool isCirclePlayer) {
+    // Negamax algorithm with alpha-beta pruning, TT, and PV storage
+    float negamax(const GameState& position, int depth, float alpha, float beta, bool isCirclePlayer, 
+                  int current_depth = 0) {
         nodes_searched++;
         
         // Check for timeout
@@ -1988,6 +2210,16 @@ private:
         // uint64_t position_hash = tt.computeHash(position, isCirclePlayer);
         
         // Probe transposition table
+        float tt_evaluation;
+        Move tt_best_move;
+        if (tt.probe(position_hash, depth, alpha, beta, tt_evaluation, tt_best_move)) {
+            if (depth >= 3) {  // Only log for deeper searches to avoid spam
+                g_logger.log(LogLevel::DEBUG, "MINIMAX: TT HIT at depth " + std::to_string(depth) + 
+                            ", eval=" + std::to_string(tt_evaluation) + 
+                            ", move=" + tt_best_move.action);
+            }
+            return tt_evaluation;
+        }
         // float tt_evaluation;
         // Move tt_best_move;
         // if (tt.probe(position_hash, depth, alpha, beta, tt_evaluation, tt_best_move)) {
@@ -2025,6 +2257,8 @@ private:
             return evaluation;
         }
         
+        // Order moves using PV from previous iteration + TT move
+        std::vector<Move> orderedMoves = orderMovesWithPV(moves, position_hash, current_depth);
         // Move ordering: try TT best move first
         // if (!tt_best_move.action.empty()) {
         //     auto it = std::find(moves.begin(), moves.end(), tt_best_move);
@@ -2034,10 +2268,11 @@ private:
         // }
         
         float maxEval = -1000000.0f;
-        Move best_move = moves[0];  // Default best move
+        Move best_move = orderedMoves[0];  // Default best move
         float original_alpha = alpha;
         
-        for (const Move& move : moves) {
+        int moves_tried = 0;
+        for (const Move& move : orderedMoves) {
             if (timeManager.shouldStop()) break;
             
             // Apply move
@@ -2046,22 +2281,39 @@ private:
                 continue;  // Invalid move
             }
             
+            moves_tried++;
+            
             // Recursive search
-            float evaluation = -negamax(newPosition, depth - 1, -beta, -alpha, !isCirclePlayer);
+            float evaluation = -negamax(newPosition, depth - 1, -beta, -alpha, !isCirclePlayer, current_depth + 1);
             
             if (evaluation > maxEval) {
                 maxEval = evaluation;
                 best_move = move;
+                if (depth >= 4) {  // Log best move changes at deeper levels
+                    g_logger.log(LogLevel::DEBUG, "MINIMAX: New best at depth " + std::to_string(depth) +
+                                ", move=" + move.action + ", eval=" + std::to_string(evaluation));
+                }
             }
             
             alpha = std::max(alpha, evaluation);
             
             if (beta <= alpha) {
+                if (depth >= 3) {  // Log cutoffs at deeper levels
+                    g_logger.log(LogLevel::DEBUG, "MINIMAX: Beta cutoff at depth " + std::to_string(depth) +
+                                ", move " + std::to_string(moves_tried) + "/" + std::to_string(moves.size()) +
+                                ", alpha=" + std::to_string(alpha) + ", beta=" + std::to_string(beta));
+                }
                 break;  // Alpha-beta cutoff
             }
         }
         
         // Store result in transposition table
+        tt.store(position_hash, maxEval, best_move, depth, original_alpha, beta);
+        
+        // Store PV move if we have a best move
+        if (!best_move.action.empty()) {
+            storePVMove(position_hash, current_depth, best_move);
+        }
         // tt.store(position_hash, maxEval, best_move, depth, original_alpha, beta);
         
         return maxEval;
