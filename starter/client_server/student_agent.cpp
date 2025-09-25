@@ -132,7 +132,7 @@ public:
     void enableLogging(bool enable) {
         logging_enabled = enable;
     }
-    
+
     void nextMove() {
         move_number++;
     }
@@ -205,6 +205,152 @@ public:
         ss << std::put_time(std::localtime(&time_t), "%H:%M:%S");
         ss << "." << std::setfill('0') << std::setw(3) << ms.count();
         return ss.str();
+    }
+    
+    // ==================== HIERARCHICAL SEARCH LOGGING ====================
+private:
+    int current_search_depth = 0;    // Current depth in search tree
+    int current_node_count = 0;      // Node counter at current depth
+    std::vector<int> nodes_at_depth; // Track nodes explored per depth
+    std::vector<int> cutoffs_at_depth; // Track cutoffs per depth
+    std::vector<int> moves_at_depth;  // Track move numbers per depth
+    
+public:
+    // Enter a new depth level in search tree
+    void enterDepth(int depth, int move_index, int total_moves, const std::string& move_desc = "") {
+        if (!logging_enabled || !main_log_file.is_open()) return;
+        
+        // Ensure vectors are large enough
+        while (nodes_at_depth.size() <= depth) {
+            nodes_at_depth.push_back(0);
+            cutoffs_at_depth.push_back(0);
+            moves_at_depth.push_back(0);
+        }
+        
+        moves_at_depth[depth] = move_index;
+        nodes_at_depth[depth]++;
+        current_search_depth = depth;
+        
+        // Create indentation based on depth
+        std::string indent(depth * 2, ' ');
+        
+        main_log_file << "[" << getCurrentTimestamp() << "] " 
+                     << indent << "D" << depth << " ";
+        
+        if (depth == 0) {
+            main_log_file << "ROOT: ";
+        } else {
+            main_log_file << "N" << nodes_at_depth[depth] << ": ";
+        }
+        
+        main_log_file << "Move " << (move_index + 1) << "/" << total_moves;
+        
+        if (!move_desc.empty()) {
+            main_log_file << " " << move_desc;
+        }
+        
+        main_log_file << "\n";
+        main_log_file.flush();
+    }
+    
+    // Log hierarchical search information with proper indentation
+    void logHierarchical(int depth, const std::string& message) {
+        if (!logging_enabled || !main_log_file.is_open()) return;
+        
+        std::string indent(depth * 2, ' ');
+        main_log_file << "[" << getCurrentTimestamp() << "] " 
+                     << indent << "D" << depth << " " << message << "\n";
+        main_log_file.flush();
+    }
+    
+    // Log alpha-beta bounds at current depth
+    void logAlphaBeta(int depth, float alpha, float beta, const std::string& context = "") {
+        if (!logging_enabled || !main_log_file.is_open()) return;
+        
+        std::string indent(depth * 2, ' ');
+        main_log_file << "[" << getCurrentTimestamp() << "] " 
+                     << indent << "D" << depth << " α=" << std::fixed << std::setprecision(2) << alpha 
+                     << " β=" << std::fixed << std::setprecision(2) << beta;
+        
+        if (!context.empty()) {
+            main_log_file << " " << context;
+        }
+        
+        main_log_file << "\n";
+        main_log_file.flush();
+    }
+    
+    // Log evaluation result at leaf nodes
+    void logEvaluation(int depth, float eval, const std::string& position_info = "") {
+        if (!logging_enabled || !main_log_file.is_open()) return;
+        
+        std::string indent(depth * 2, ' ');
+        main_log_file << "[" << getCurrentTimestamp() << "] " 
+                     << indent << "D" << depth << " EVAL=" << std::fixed << std::setprecision(2) << eval;
+        
+        if (!position_info.empty()) {
+            main_log_file << " " << position_info;
+        }
+        
+        main_log_file << "\n";
+        main_log_file.flush();
+    }
+    
+    // Log beta cutoff with statistics
+    void logCutoff(int depth, int moves_searched, int total_moves, float alpha, float beta) {
+        if (!logging_enabled || !main_log_file.is_open()) return;
+        
+        if (depth < cutoffs_at_depth.size()) {
+            cutoffs_at_depth[depth]++;
+        }
+        
+        std::string indent(depth * 2, ' ');
+        main_log_file << "[" << getCurrentTimestamp() << "] " 
+                     << indent << "D" << depth << " CUTOFF! β=" << std::fixed << std::setprecision(2) << beta 
+                     << " ≤ α=" << std::fixed << std::setprecision(2) << alpha
+                     << " (searched " << moves_searched << "/" << total_moves << " moves)\n";
+        main_log_file.flush();
+    }
+    
+    // Log best move change with evaluation improvement
+    void logBestMoveChange(int depth, const std::string& move_desc, float old_eval, float new_eval) {
+        if (!logging_enabled || !main_log_file.is_open()) return;
+        
+        std::string indent(depth * 2, ' ');
+        main_log_file << "[" << getCurrentTimestamp() << "] " 
+                     << indent << "D" << depth << " NEW BEST: " << move_desc
+                     << " (eval: " << std::fixed << std::setprecision(2) << old_eval 
+                     << " → " << std::fixed << std::setprecision(2) << new_eval << ")\n";
+        main_log_file.flush();
+    }
+    
+    // Log search statistics at end of iteration
+    void logDepthStatistics() {
+        if (!logging_enabled || !main_log_file.is_open()) return;
+        
+        main_log_file << "[" << getCurrentTimestamp() << "] SEARCH STATS:\n";
+        for (size_t d = 0; d < nodes_at_depth.size(); ++d) {
+            if (nodes_at_depth[d] > 0) {
+                float cutoff_rate = (cutoffs_at_depth.size() > d && nodes_at_depth[d] > 0) ? 
+                    (100.0f * cutoffs_at_depth[d] / nodes_at_depth[d]) : 0.0f;
+                    
+                main_log_file << "  Depth " << d << ": " << nodes_at_depth[d] 
+                             << " nodes, " << cutoffs_at_depth[d] 
+                             << " cutoffs (" << std::fixed << std::setprecision(1) 
+                             << cutoff_rate << "%)\n";
+            }
+        }
+        main_log_file << "\n";
+        main_log_file.flush();
+    }
+    
+    // Reset search statistics for new search
+    void resetSearchStats() {
+        nodes_at_depth.clear();
+        cutoffs_at_depth.clear(); 
+        moves_at_depth.clear();
+        current_search_depth = 0;
+        current_node_count = 0;
     }
     
     std::string moveToString(const Move& move) const;
@@ -853,7 +999,6 @@ public:
         initializeScoringAreas(gameState);
         float score1 = computeBasicEvaluation(gameState, isCirclePlayer);
         float score2 = evaluatePosition(gameState, isCirclePlayer);
-        float score3 = evaluateSafety(gameState, isCirclePlayer);
         float score4 = evaluateMobility(gameState, isCirclePlayer);
         
         float score = score1*weight1 + score2*weight2 + score3*weight3 + score4*weight4;
@@ -923,14 +1068,6 @@ public:
         int opponent_mobile_stones = countStonesAdjacentToRivers(gameState, !isCirclePlayer);
         
         return static_cast<float>(my_mobile_stones);
-    }
-    
-    float evaluateSafety(const GameState& gameState, bool isCirclePlayer) const {        
-
-        // int opponent_open_sides = countOpenSidesAroundScoringArea(gameState, !isCirclePlayer);
-        int my_open_sides = countOpenSidesAroundScoringArea(gameState, isCirclePlayer);
-        
-        return (my_open_sides)/3.0f;
     }
     
 
@@ -1805,6 +1942,8 @@ public:
         // Reset search statistics
         nodes_searched = 0;
         max_depth_reached = 0;
+
+        g_logger.resetSearchStats();
         
         // Convert player string to boolean for consistency
         bool isCirclePlayer = (player == "circle");
@@ -1875,7 +2014,10 @@ public:
                     ", nodes=" + std::to_string(nodes_searched) + 
                     ", TT_size=" + std::to_string(tt.size()) +
                     ", time=" + std::to_string(timeManager.getElapsedTime()) + "s");
+
         
+        g_logger.logDepthStatistics();
+
         return bestResult.bestMove;
     }
     
@@ -1932,7 +2074,7 @@ private:
         // If no PV move found, try TT move ordering as fallback
         Move tt_move;
         float dummy_eval;
-        if (tt.probe(position_hash, current_depth, -1000000.0f, 1000000.0f, dummy_eval, tt_move)) {
+        if (tt.probe(position_hash, current_depth, -10000000.0f, 10000000.0f, dummy_eval, tt_move)) {
             if (!tt_move.action.empty()) {
                 auto it = std::find(ordered_moves.begin(), ordered_moves.end(), tt_move);
                 if (it != ordered_moves.end()) {
@@ -1951,12 +2093,12 @@ private:
                             const std::vector<Move>& rootMoves) {
         
         SearchResult bestResult;
-        bestResult.evaluation = -1000000.0f;  // Negative infinity
+        bestResult.evaluation = -10000000.0f;  // Negative infinity
         bestResult.bestMove = rootMoves[0];   // Default move
         bestResult.depth_reached = depth;
         
-        float alpha = -1000000.0f;  // Initialize alpha at root
-        float beta = 1000000.0f;    // Initialize beta at root
+        float alpha = -10000000.0f;  // Initialize alpha at root
+        float beta = 10000000.0f;    // Initialize beta at root
         int moves_evaluated = 0;
         int cutoffs = 0;
         
@@ -1970,15 +2112,26 @@ private:
         for (const Move& move : orderedMoves) {
             if (timeManager.shouldStop()) {
                 bestResult.timeout_occurred = true;
-                g_logger.log(LogLevel::DEBUG, "MINIMAX: Timeout at root level after " + 
-                            std::to_string(moves_evaluated) + "/" + std::to_string(rootMoves.size()) + " moves");
+                g_logger.logHierarchical(0, "TIMEOUT after " + std::to_string(moves_evaluated) + 
+                                        "/" + std::to_string(orderedMoves.size()) + " moves");
                 break;
             }
+
+            std::string move_desc = move.action;
+            if (!move.from.empty() && move.from.size() >= 2) {
+                move_desc += " (" + std::to_string(move.from[0]) + "," + std::to_string(move.from[1]) + ")";
+            }
+            if (!move.to.empty() && move.to.size() >= 2) {
+                move_desc += "->(" + std::to_string(move.to[0]) + "," + std::to_string(move.to[1]) + ")";
+            }
+            
+            g_logger.enterDepth(0, i, orderedMoves.size(), move_desc);
+            g_logger.logAlphaBeta(0, alpha, beta, "[ROOT]");
             
             // Apply move to get new position
             GameState newPosition = position.clone();
             if (!applyMoveToPosition(newPosition, move)) {
-                g_logger.log(LogLevel::DEBUG, "MINIMAX: Invalid root move skipped: " + move.action);
+                g_logger.logHierarchical(0, "INVALID MOVE - skipped");
                 continue;  // Invalid move, skip
             }
             
@@ -1987,11 +2140,11 @@ private:
             // Search this branch with current alpha-beta window
             float evaluation = -negamax(newPosition, depth - 1, -beta, -alpha, !isCirclePlayer, 1);
             
-            g_logger.log(LogLevel::DEBUG, "MINIMAX: Root move " + std::to_string(moves_evaluated) + 
-                        ": " + move.action + " eval=" + std::to_string(evaluation));
+            g_logger.logHierarchical(0, "eval=" + std::to_string(evaluation));
             
             // Update best move if this is better
             if (evaluation > bestResult.evaluation) {
+                g_logger.logBestMoveChange(0, move_desc, bestResult.evaluation, evaluation);
                 bestResult.evaluation = evaluation;
                 bestResult.bestMove = move;
             }
@@ -2001,8 +2154,8 @@ private:
             alpha = std::max(alpha, evaluation);
             
             if (alpha > old_alpha) {
-                g_logger.log(LogLevel::DEBUG, "MINIMAX: Alpha improved at root: " + 
-                            std::to_string(old_alpha) + " -> " + std::to_string(alpha));
+                g_logger.logHierarchical(0, "α improved: " + std::to_string(old_alpha) + 
+                                        " → " + std::to_string(alpha));
             }
             
             // Beta cutoff at root level (though rare with initial beta=+infinity)
@@ -2038,10 +2191,9 @@ private:
         float tt_evaluation;
         Move tt_best_move;
         if (tt.probe(position_hash, depth, alpha, beta, tt_evaluation, tt_best_move)) {
-            if (depth >= 3) {  // Only log for deeper searches to avoid spam
-                g_logger.log(LogLevel::DEBUG, "MINIMAX: TT HIT at depth " + std::to_string(depth) + 
-                            ", eval=" + std::to_string(tt_evaluation) + 
-                            ", move=" + tt_best_move.action);
+            if (current_depth <= 4) {
+                g_logger.logHierarchical(current_depth, "TT HIT: eval=" + std::to_string(tt_evaluation) + 
+                                        ", move=" + tt_best_move.action);
             }
             return tt_evaluation;
         }
@@ -2049,6 +2201,12 @@ private:
         // Terminal conditions
         if (depth == 0) {
             float evaluation = evaluator->EvaluateBoard(position, isCirclePlayer);
+
+            // Log leaf evaluation
+            if (current_depth <= 6) {
+                std::string player_info = isCirclePlayer ? "[circle]" : "[square]";
+                g_logger.logEvaluation(current_depth, evaluation, "LEAF " + player_info);
+            }
             // Store leaf evaluation in TT
             Move dummy_move;
             tt.store(position_hash, evaluation, dummy_move, depth, alpha, beta);
@@ -2058,11 +2216,18 @@ private:
         // Check for game ending (win condition)
         std::string winner = position.getWinner();
         if (!winner.empty()) {
+            float terminal_eval;
             if ((winner == "circle" && isCirclePlayer) || (winner == "square" && !isCirclePlayer)) {
-                return 100.0f + depth;  // Win bonus for shorter paths
+                terminal_eval = 100.0f + depth;  // Win bonus for shorter paths
             } else {
-                return -100.0f - depth;  // Loss penalty
+                terminal_eval = -100.0f - depth;  // Loss penalty
             }
+            
+            if (current_depth <= 6) {
+                g_logger.logEvaluation(current_depth, terminal_eval, "TERMINAL: " + winner + " wins");
+            }
+            
+            return terminal_eval;
         }
         
         // Generate moves for current position
@@ -2080,17 +2245,37 @@ private:
         // Order moves using PV from previous iteration + TT move
         std::vector<Move> orderedMoves = orderMovesWithPV(moves, position_hash, current_depth);
         
-        float maxEval = -1000000.0f;
+        float maxEval = -10000000.0f;
         Move best_move = orderedMoves[0];  // Default best move
         float original_alpha = alpha;
         
         int moves_tried = 0;
-        for (const Move& move : orderedMoves) {
+        for (int i = 0; i < orderedMoves.size(); ++i) {
+            const Move& move = orderedMoves[i];
+            
             if (timeManager.shouldStop()) break;
+            
+            // Create move description for logging
+            std::string move_desc = move.action;
+            if (!move.from.empty() && move.from.size() >= 2) {
+                move_desc += " (" + std::to_string(move.from[0]) + "," + std::to_string(move.from[1]) + ")";
+            }
+            if (!move.to.empty() && move.to.size() >= 2) {
+                move_desc += "->(" + std::to_string(move.to[0]) + "," + std::to_string(move.to[1]) + ")";
+            }
+            
+            // Log entry into this child node (only for depths we care about)
+            if (current_depth <= 4) {  // Avoid excessive logging at deep levels
+                g_logger.enterDepth(current_depth, i, orderedMoves.size(), move_desc);
+                g_logger.logAlphaBeta(current_depth, alpha, beta);
+            }
             
             // Apply move
             GameState newPosition = position.clone();
             if (!applyMoveToPosition(newPosition, move)) {
+                if (current_depth <= 4) {
+                    g_logger.logHierarchical(current_depth, "INVALID MOVE - skipped");
+                }
                 continue;  // Invalid move
             }
             
@@ -2099,22 +2284,24 @@ private:
             // Recursive search
             float evaluation = -negamax(newPosition, depth - 1, -beta, -alpha, !isCirclePlayer, current_depth + 1);
             
+            // Log the evaluation result
+            if (current_depth <= 4) {
+                g_logger.logHierarchical(current_depth, "child returned " + std::to_string(evaluation));
+            }
+            
             if (evaluation > maxEval) {
+                if (current_depth <= 4) {
+                    g_logger.logBestMoveChange(current_depth, move_desc, maxEval, evaluation);
+                }
                 maxEval = evaluation;
                 best_move = move;
-                if (depth >= 4) {  // Log best move changes at deeper levels
-                    g_logger.log(LogLevel::DEBUG, "MINIMAX: New best at depth " + std::to_string(depth) +
-                                ", move=" + move.action + ", eval=" + std::to_string(evaluation));
-                }
             }
             
             alpha = std::max(alpha, evaluation);
             
             if (beta <= alpha) {
-                if (depth >= 3) {  // Log cutoffs at deeper levels
-                    g_logger.log(LogLevel::DEBUG, "MINIMAX: Beta cutoff at depth " + std::to_string(depth) +
-                                ", move " + std::to_string(moves_tried) + "/" + std::to_string(moves.size()) +
-                                ", alpha=" + std::to_string(alpha) + ", beta=" + std::to_string(beta));
+                if (current_depth <= 4) {
+                    g_logger.logCutoff(current_depth, moves_tried, orderedMoves.size(), alpha, beta);
                 }
                 break;  // Alpha-beta cutoff
             }
