@@ -958,308 +958,631 @@ std::string AILogger::moveToString(const Move& move) const {
 // ==================== BOARD EVALUATION SYSTEM ====================
 
 class BoardEvaluator {
-private:
-    
-    struct ScoringArea {
-        int row = 0;  // Inclusive bounds for scoring rows
-        std::vector<int> score_cols;  // Scoring columns
-    };
-    
-    mutable ScoringArea circle_scoring;   
-    mutable ScoringArea square_scoring;
-    mutable bool scoring_areas_initialized = false;
+    private:
+        
+        struct ScoringArea {
+            int row = 0;  // Inclusive bounds for scoring rows
+            std::vector<int> score_cols;  // Scoring columns
+        };
+        
+        mutable ScoringArea circle_scoring;   
+        mutable ScoringArea square_scoring;
+        mutable bool scoring_areas_initialized = false;
 
-    float weight1 = 400.0f;
-    float weight2 = 180.0f; //<180 onwards
-    float weight3 = -80.0f;
-    float weight4 = 100.0f;
+        float weight1 = 400.0f;
+        float weight2 = 180.0f; //<180 onwards
+        float weight3 = 100.0f;
 
-    
-    void initializeScoringAreas(const GameState& gameState) const {
-        if (scoring_areas_initialized) return;
+        // Adjust weights - start with moderate values and tune
+        float weight_river_mobility = 80.0f;    // Weight for territorial reach
+        float weight_river_combos = 75.0f;      // Weight for river combinations
         
-        int rows = gameState.getRows();
-        const auto& score_cols = gameState.getScoreCols();
+        void initializeScoringAreas(const GameState& gameState) const {
+            if (scoring_areas_initialized) return;
+            
+            int rows = gameState.getRows();
+            const auto& score_cols = gameState.getScoreCols();
+            
+            // Circle scores in bottom rows (rows-3 to rows-1)
+            circle_scoring.row = 2;
+            circle_scoring.score_cols = score_cols;
+            
+            // Square scores in top rows (0 to 2)
+            square_scoring.row = rows-3;
+            square_scoring.score_cols = score_cols;
+            
+            scoring_areas_initialized = true;
+        }
         
-        // Circle scores in bottom rows (rows-3 to rows-1)
-        circle_scoring.row = 2;
-        circle_scoring.score_cols = score_cols;
-        
-        // Square scores in top rows (0 to 2)
-        square_scoring.row = rows-3;
-        square_scoring.score_cols = score_cols;
-        
-        scoring_areas_initialized = true;
-    }
-    
-public:
+    public:
 
-    float EvaluateBoard(const GameState& gameState, bool isCirclePlayer) const {
+        float EvaluateBoard(const GameState& gameState, bool isCirclePlayer) const {
 
-        initializeScoringAreas(gameState);
-        float score1 = computeBasicEvaluation(gameState, isCirclePlayer);
-        float score2 = evaluatePosition(gameState, isCirclePlayer);
-        float score4 = evaluateMobility(gameState, isCirclePlayer);
-        
-        float score = score1*weight1 + score2*weight2 + score3*weight3 + score4*weight4;
-        return score;
-    }
-    
-    float computeBasicEvaluation(const GameState& gameState, bool isCirclePlayer) const {
-        
-        float score = 0.0f;
-        int player_scoring_stones = countStonesInScoringArea(gameState, isCirclePlayer);
-        int opponent_scoring_stones = countStonesInScoringArea(gameState, !isCirclePlayer);
-        
-        score += player_scoring_stones * 1.0f;   // +100 per scoring stone
-        score -= opponent_scoring_stones * 1.0f; // -100 per opponent scoring stone
+            initializeScoringAreas(gameState);
+            float score1 = computeBasicEvaluation(gameState, isCirclePlayer);
+            float score2 = evaluatePosition(gameState, isCirclePlayer);
+            // float score3 = evaluateMobility(gameState, isCirclePlayer);
+            
+            // NEW: Add river-based evaluations
+            float river_mobility = evaluateRiverMobility(gameState, isCirclePlayer);
+            float river_combos = evaluateRiverCombos(gameState, isCirclePlayer);
+            
+            float base_score = score1 * weight1 + score2 * weight2;
+                        
+            float river_score_tot = river_mobility * weight_river_mobility + river_combos * weight_river_combos;
 
-        int player_scoring_Rivers = countRiversInScoringArea(gameState, isCirclePlayer);
-        int opponent_scoring_Rivers = countRiversInScoringArea(gameState, !isCirclePlayer);
+            return river_score_tot + base_score;
+        }
         
-        score += player_scoring_Rivers * 0.3f;   // +100 per scoring River
-        score -= opponent_scoring_Rivers * 0.3f; // -100 per opponent scoring River
-        
-        return score;
-    }
-    
-    float evaluatePosition(const GameState& gameState, bool isCirclePlayer) const {
-        std::vector<int> player_distances = getDistancesFromScoringArea(gameState, isCirclePlayer);
-        // std::vector<int> opponent_distances = getDistancesFromScoringArea(gameState, !isCirclePlayer);
-        
-        auto calculatePositionScore = [](const std::vector<int>& distances) -> float {
+        float computeBasicEvaluation(const GameState& gameState, bool isCirclePlayer) const {
             float score = 0.0f;
             
-            // Base score: sum of (25 - distance) for all pieces
-            for (int dist : distances) {
-                // Clamp distance to reasonable maximum to prevent negative scores
-                int clamped_dist = std::min(dist, 24);  // Max distance gives score of 1
-                score += (25.0f - clamped_dist);
-            }
+            // Scoring area evaluation (existing logic)
+            int player_scoring_stones = countStonesInScoringArea(gameState, isCirclePlayer);
+            int opponent_scoring_stones = countStonesInScoringArea(gameState, !isCirclePlayer);
+            
+            score += player_scoring_stones * 1.0f;
+            score -= opponent_scoring_stones * 1.0f;
 
-            for (int dist : distances) {
-                if (dist <= 1) {
-                    score += 25.0f;  // Huge bonus for distance 1 (immediate threat)
-                }
-                else if (dist <= 3) {
-                    score += 10.0f;  // Large bonus for very close pieces
-                }
-                else if (dist <= 6) {
-                    score += 4.0f;   // Medium bonus for close pieces
-                }
-                else if (dist <= 10) {
-                    score += 2.0f;   // Small bonus for advancing pieces
-                }
-                // No extra bonus for very distant pieces (dist > 10)
-            }
+            int player_scoring_rivers = countRiversInScoringArea(gameState, isCirclePlayer);
+            int opponent_scoring_rivers = countRiversInScoringArea(gameState, !isCirclePlayer);
+            
+            score += player_scoring_rivers * 0.3f;
+            score -= opponent_scoring_rivers * 0.3f;
+            
+            // NEW: Add aggressive positioning rewards
+            int player_stones_in_enemy_half = countStonesInEnemyHalf(gameState, isCirclePlayer);
+            int opponent_stones_in_our_half = countStonesInEnemyHalf(gameState, !isCirclePlayer);
+            
+            score += player_stones_in_enemy_half * 0.5f;    // Reward our aggressive stones
+            score -= opponent_stones_in_our_half * 0.4f;    // Penalize enemy aggressive stones
+            
+            // NEW: Reward stones in scoring columns (even if not in scoring area yet)
+            int player_stones_in_score_cols = countStonesInScoringColumns(gameState, isCirclePlayer);
+            int opponent_stones_in_score_cols = countStonesInScoringColumns(gameState, !isCirclePlayer);
+            
+            score += player_stones_in_score_cols * 0.3f;
+            score -= opponent_stones_in_score_cols * 0.3f;
+            
             return score;
-        };
-
-        float player_score = calculatePositionScore(player_distances);
-        // float opponent_score = calculatePositionScore(opponent_distances);
-        
-        return (player_score)/50;
-    }
-    
-    float evaluateMobility(const GameState& gameState, bool isCirclePlayer) const {
-
-        int my_mobile_stones = countStonesAdjacentToRivers(gameState, isCirclePlayer);
-        
-        int opponent_mobile_stones = countStonesAdjacentToRivers(gameState, !isCirclePlayer);
-        
-        return static_cast<float>(my_mobile_stones);
-    }
-    
-
-private:
-    
-    // Count stones in scoring area - helper function
-    int countStonesInScoringArea(const GameState& gameState, bool isCirclePlayer) const {
-        int count = 0;
-        const ScoringArea& area = isCirclePlayer ? circle_scoring : square_scoring;
-        
-        // Check all positions in the scoring area
-        for (int col : area.score_cols) {
-            if (gameState.inBounds(col,area.row) &&
-                gameState.isPlayerPiece(col,area.row, isCirclePlayer) &&
-                gameState.getPieceType(col,area.row) == "stone") {
-                count++;
-            }
         }
         
-        return count;
-    }
-    // Count stones in scoring area - helper function
-    int countRiversInScoringArea(const GameState& gameState, bool isCirclePlayer) const {
-        int count = 0;
-        const ScoringArea& area = isCirclePlayer ? circle_scoring : square_scoring;
-        
-        // Check all positions in the scoring area
-        for (int col : area.score_cols) {
-            if (gameState.inBounds(col,area.row) &&
-                gameState.isPlayerPiece(col,area.row, isCirclePlayer) &&
-                gameState.getPieceType(col,area.row) == "river") {
-                count++;
-            }
+        float evaluatePosition(const GameState& gameState, bool isCirclePlayer) const {
+            std::vector<int> player_distances = getDistancesFromScoringArea(gameState, isCirclePlayer);
+            std::vector<int> player_attack_depths = getAttackDepths(gameState, isCirclePlayer);
+            
+            auto calculatePositionScore = [](const std::vector<int>& distances, const std::vector<int>& attack_depths) -> float {
+                float score = 0.0f;
+                
+                // Base score: sum of (25 - distance) for all pieces
+                for (int dist : distances) {
+                    int clamped_dist = std::min(dist, 24);
+                    score += (25.0f - clamped_dist);
+                }
+
+                // Distance-based bonuses (existing logic)
+                for (int dist : distances) {
+                    if (dist <= 1) {
+                        score += 25.0f;  // Huge bonus for distance 1
+                    }
+                    else if (dist <= 3) {
+                        score += 10.0f;  // Large bonus for very close pieces
+                    }
+                    else if (dist <= 6) {
+                        score += 4.0f;   // Medium bonus for close pieces
+                    }
+                    else if (dist <= 10) {
+                        score += 2.0f;   // Small bonus for advancing pieces
+                    }
+                }
+                
+                // NEW: Attack depth bonuses - reward deep territorial penetration
+                for (int attack_depth : attack_depths) {
+                    if (attack_depth >= 4) {
+                        score += 40.0f;  // Huge bonus for deep penetration (past halfway)
+                    }
+                    else if (attack_depth >= 3) {
+                        score += 25.0f;  // Large bonus for solid advance
+                    }
+                    else if (attack_depth >= 2) {
+                        score += 15.0f;  // Good bonus for crossing into enemy territory
+                    }
+                    else if (attack_depth >= 1) {
+                        score += 8.0f;   // Small bonus for any territorial advance
+                    }
+                }
+                
+                return score;
+            };
+
+            float player_score = calculatePositionScore(player_distances, player_attack_depths);
+            
+            return player_score / 50;
         }
         
-        return count;
-    }
-    
-    // Calculate distances from scoring area for all player pieces
-    // Returns list of minimum Manhattan distances to any of the 4 scoring cells
-    std::vector<int> getDistancesFromScoringArea(const GameState& gameState, bool isCirclePlayer) const {        
-        
-        std::vector<int> distances;
-        const ScoringArea& area = isCirclePlayer ? circle_scoring : square_scoring;
-        
-        // Get all player piece positions using optimized position sets
-        const auto& player_positions = gameState.getPlayerPiecePositions(isCirclePlayer);
-        
-        // Calculate distance for each piece
-        for (const auto& piece_pos : player_positions) {
-            int piece_x = piece_pos.first;
-            int piece_y = piece_pos.second;
+        float evaluateMobility(const GameState& gameState, bool isCirclePlayer) const {
+
+            int my_mobile_stones = countStonesAdjacentToRivers(gameState, isCirclePlayer);
             
-            int min_distance = INT_MAX;
+            int opponent_mobile_stones = countStonesAdjacentToRivers(gameState, !isCirclePlayer);
             
-            // Check distance to each of the 4 scoring cells
-            for (int score_col : area.score_cols) {
-                int score_x = score_col;
+            return static_cast<float>(my_mobile_stones);
+        }
+        
+
+    private:
+        
+        // Count stones in scoring area - helper function
+        int countStonesInScoringArea(const GameState& gameState, bool isCirclePlayer) const {
+            int count = 0;
+            const ScoringArea& area = isCirclePlayer ? circle_scoring : square_scoring;
+            
+            // Check all positions in the scoring area
+            for (int col : area.score_cols) {
+                if (gameState.inBounds(col,area.row) &&
+                    gameState.isPlayerPiece(col,area.row, isCirclePlayer) &&
+                    gameState.getPieceType(col,area.row) == "stone") {
+                    count++;
+                }
+            }
+            
+            return count;
+        }
+        // Count stones in scoring area - helper function
+        int countRiversInScoringArea(const GameState& gameState, bool isCirclePlayer) const {
+            int count = 0;
+            const ScoringArea& area = isCirclePlayer ? circle_scoring : square_scoring;
+            
+            // Check all positions in the scoring area
+            for (int col : area.score_cols) {
+                if (gameState.inBounds(col,area.row) &&
+                    gameState.isPlayerPiece(col,area.row, isCirclePlayer) &&
+                    gameState.getPieceType(col,area.row) == "river") {
+                    count++;
+                }
+            }
+            
+            return count;
+        }
+        
+        // Calculate distances from scoring area for all player pieces
+        // Returns list of minimum Manhattan distances to any of the 4 scoring cells
+        std::vector<int> getDistancesFromScoringArea(const GameState& gameState, bool isCirclePlayer) const {        
+            
+            std::vector<int> distances;
+            const ScoringArea& area = isCirclePlayer ? circle_scoring : square_scoring;
+            
+            // Get all player piece positions using optimized position sets
+            const auto& player_positions = gameState.getPlayerPiecePositions(isCirclePlayer);
+            
+            // Calculate distance for each piece
+            for (const auto& piece_pos : player_positions) {
+                int piece_x = piece_pos.first;
+                int piece_y = piece_pos.second;
+                
+                int min_distance = INT_MAX;
+                
+                // Check distance to each of the 4 scoring cells
+                for (int score_col : area.score_cols) {
+                    int score_x = score_col;
+                    int score_y = area.row;
+                    
+                    // Manhattan distance = |x1 - x2| + |y1 - y2|
+                    int manhattan_dist = abs(piece_x - score_x) + abs(piece_y - score_y);
+                    min_distance = std::min(min_distance, manhattan_dist);
+                }
+                
+                if(min_distance!=0){distances.push_back(min_distance);}
+            }
+            
+            return distances;
+        }
+        
+        // Count open positions around a player's scoring area
+        int countOpenSidesAroundScoringArea(const GameState& gameState, bool isCirclePlayer) const {
+            const ScoringArea& area = isCirclePlayer ? circle_scoring : square_scoring;
+            int open_count = 0;
+            
+            // Check all 10 positions around the 4×1 scoring area:
+            // 8 positions above and below + 2 positions on the sides
+            
+            // Check positions above and below the scoring area (8 positions)
+            for (int col : area.score_cols) {
+                int score_x = col;
                 int score_y = area.row;
                 
-                // Manhattan distance = |x1 - x2| + |y1 - y2|
-                int manhattan_dist = abs(piece_x - score_x) + abs(piece_y - score_y);
-                min_distance = std::min(min_distance, manhattan_dist);
-            }
-            
-            if(min_distance!=0){distances.push_back(min_distance);}
-        }
-        
-        return distances;
-    }
-    
-    // Count open positions around a player's scoring area
-    int countOpenSidesAroundScoringArea(const GameState& gameState, bool isCirclePlayer) const {
-        const ScoringArea& area = isCirclePlayer ? circle_scoring : square_scoring;
-        int open_count = 0;
-        
-        // Check all 10 positions around the 4×1 scoring area:
-        // 8 positions above and below + 2 positions on the sides
-        
-        // Check positions above and below the scoring area (8 positions)
-        for (int col : area.score_cols) {
-            int score_x = col;
-            int score_y = area.row;
-            
-            // Position above scoring area
-            int above_y = score_y - 1;
-            if (gameState.inBounds(score_x, above_y)) {
-                if (isPositionOpen(gameState, score_x, above_y, true)) { // true = checking vertical flow
-                    open_count++;
+                // Position above scoring area
+                int above_y = score_y - 1;
+                if (gameState.inBounds(score_x, above_y)) {
+                    if (isPositionOpen(gameState, score_x, above_y, true)) { // true = checking vertical flow
+                        open_count++;
+                    }
                 }
-            }
-            
-            // Position below scoring area  
-            int below_y = score_y + 1;
-            if (gameState.inBounds(score_x, below_y)) {
-                if (isPositionOpen(gameState, score_x, below_y, true)) { // true = checking vertical flow
-                    open_count++;
-                }
-            }
-        }
-        
-        // Check positions on the sides of the scoring area (2 positions)
-        int leftmost_col = *std::min_element(area.score_cols.begin(), area.score_cols.end());
-        int rightmost_col = *std::max_element(area.score_cols.begin(), area.score_cols.end());
-        
-        // Left side position
-        int left_x = leftmost_col - 1;
-        if (gameState.inBounds(left_x, area.row)) {
-            if (isPositionOpen(gameState, left_x, area.row, false)) { // false = checking horizontal flow
-                open_count++;
-            }
-        }
-        
-        // Right side position
-        int right_x = rightmost_col + 1;
-        if (gameState.inBounds(right_x, area.row)) {
-            if (isPositionOpen(gameState, right_x, area.row, false)) { // false = checking horizontal flow
-                open_count++;
-            }
-        }
-        
-        return open_count;
-    }
-    
-    // Check if a position is "open" (empty or has appropriate river orientation)
-    bool isPositionOpen(const GameState& gameState, int x, int y, bool checkingVerticalFlow) const {
-        uint8_t piece = gameState.getPiece(x, y);
-        
-        // Empty cell is always open
-        if (piece == EMPTY) {
-            return true;
-        }
-        
-        // If there's a river, check if it allows the right kind of flow
-        if (::isRiver(piece)) {
-            if (checkingVerticalFlow) {
-                // For vertical flow (above/below positions), we need vertical rivers
-                return ::isVertical(piece);
-            } else {
-                // For horizontal flow (side positions), we need horizontal rivers
-                return ::isHorizontal(piece);
-            }
-        }
-        
-        // Solid pieces (stones) block flow
-        return false;
-    }
-    
-    // Count stones adjacent to any river (for mobility evaluation)
-    int countStonesAdjacentToRivers(const GameState& gameState, bool isCirclePlayer) const {
-        int mobile_stone_count = 0;
-        const auto& player_positions = gameState.getPlayerPiecePositions(isCirclePlayer);
-        
-        // Check each player piece
-        for (const auto& pos : player_positions) {
-            int x = pos.first;
-            int y = pos.second;
-            uint8_t piece = gameState.getPiece(x, y);
-            
-            // Only count stones (not rivers)
-            if (!::isStone(piece)) continue;
-            
-            // Check if this stone is adjacent to any river (in 4 directions)
-            bool is_adjacent_to_river = false;
-            
-            // Check all 4 adjacent directions: up, down, left, right
-            static const int dx[] = {0, 0, -1, 1};
-            static const int dy[] = {-1, 1, 0, 0};
-            
-            for (int dir = 0; dir < 4; ++dir) {
-                int adj_x = x + dx[dir];
-                int adj_y = y + dy[dir];
                 
-                if (gameState.inBounds(adj_x, adj_y)) {
-                    uint8_t adj_piece = gameState.getPiece(adj_x, adj_y);
-                    
-                    // If adjacent cell contains any river (regardless of owner), this stone is mobile
-                    if (::isRiver(adj_piece)) {
-                        is_adjacent_to_river = true;
-                        break;  // Found at least one adjacent river, no need to check other directions
+                // Position below scoring area  
+                int below_y = score_y + 1;
+                if (gameState.inBounds(score_x, below_y)) {
+                    if (isPositionOpen(gameState, score_x, below_y, true)) { // true = checking vertical flow
+                        open_count++;
                     }
                 }
             }
             
-            if (is_adjacent_to_river) {
-                mobile_stone_count++;
+            // Check positions on the sides of the scoring area (2 positions)
+            int leftmost_col = *std::min_element(area.score_cols.begin(), area.score_cols.end());
+            int rightmost_col = *std::max_element(area.score_cols.begin(), area.score_cols.end());
+            
+            // Left side position
+            int left_x = leftmost_col - 1;
+            if (gameState.inBounds(left_x, area.row)) {
+                if (isPositionOpen(gameState, left_x, area.row, false)) { // false = checking horizontal flow
+                    open_count++;
+                }
             }
+            
+            // Right side position
+            int right_x = rightmost_col + 1;
+            if (gameState.inBounds(right_x, area.row)) {
+                if (isPositionOpen(gameState, right_x, area.row, false)) { // false = checking horizontal flow
+                    open_count++;
+                }
+            }
+            
+            return open_count;
         }
         
-        return mobile_stone_count;
-    }
-    
+        // Check if a position is "open" (empty or has appropriate river orientation)
+        bool isPositionOpen(const GameState& gameState, int x, int y, bool checkingVerticalFlow) const {
+            uint8_t piece = gameState.getPiece(x, y);
+            
+            // Empty cell is always open
+            if (piece == EMPTY) {
+                return true;
+            }
+            
+            // If there's a river, check if it allows the right kind of flow
+            if (::isRiver(piece)) {
+                if (checkingVerticalFlow) {
+                    // For vertical flow (above/below positions), we need vertical rivers
+                    return ::isVertical(piece);
+                } else {
+                    // For horizontal flow (side positions), we need horizontal rivers
+                    return ::isHorizontal(piece);
+                }
+            }
+            
+            // Solid pieces (stones) block flow
+            return false;
+        }
+        
+        // Count stones adjacent to any river (for mobility evaluation)
+        int countStonesAdjacentToRivers(const GameState& gameState, bool isCirclePlayer) const {
+            int mobile_stone_count = 0;
+            const auto& player_positions = gameState.getPlayerPiecePositions(isCirclePlayer);
+            
+            // Check each player piece
+            for (const auto& pos : player_positions) {
+                int x = pos.first;
+                int y = pos.second;
+                uint8_t piece = gameState.getPiece(x, y);
+                
+                // Only count stones (not rivers)
+                if (!::isStone(piece)) continue;
+                
+                // Check if this stone is adjacent to any river (in 4 directions)
+                bool is_adjacent_to_river = false;
+                
+                // Check all 4 adjacent directions: up, down, left, right
+                static const int dx[] = {0, 0, -1, 1};
+                static const int dy[] = {-1, 1, 0, 0};
+                
+                for (int dir = 0; dir < 4; ++dir) {
+                    int adj_x = x + dx[dir];
+                    int adj_y = y + dy[dir];
+                    
+                    if (gameState.inBounds(adj_x, adj_y)) {
+                        uint8_t adj_piece = gameState.getPiece(adj_x, adj_y);
+                        
+                        // If adjacent cell contains any river (regardless of owner), this stone is mobile
+                        if (::isRiver(adj_piece)) {
+                            is_adjacent_to_river = true;
+                            break;  // Found at least one adjacent river, no need to check other directions
+                        }
+                    }
+                }
+                
+                if (is_adjacent_to_river) {
+                    mobile_stone_count++;
+                }
+            }
+            
+            return mobile_stone_count;
+        }
+        
+
+        // ================= AGGRESSIVE-ATTACK EVALUATION ========================
+
+        // Calculate how deep each stone has penetrated into enemy territory
+        std::vector<int> getAttackDepths(const GameState& gameState, bool isCirclePlayer) const {
+            std::vector<int> attack_depths;
+            
+            // Get all player piece positions
+            const auto& player_positions = gameState.getPlayerPiecePositions(isCirclePlayer);
+            
+            // Define territory boundaries
+            int total_rows = gameState.getRows();
+            int enemy_territory_start, friendly_territory_end;
+            
+            if (isCirclePlayer) {
+                // Circle attacks towards top (row 0), defends bottom
+                friendly_territory_end = total_rows - 1;  // Bottom row is friendly
+                enemy_territory_start = total_rows / 2;   // Enemy territory starts at middle
+            } else {
+                // Square attacks towards bottom, defends top
+                friendly_territory_end = 0;               // Top row is friendly
+                enemy_territory_start = total_rows / 2;   // Enemy territory starts at middle
+            }
+            
+            // Calculate attack depth for each stone
+            for (const auto& piece_pos : player_positions) {
+                int piece_x = piece_pos.first;
+                int piece_y = piece_pos.second;
+                
+                // Only consider stones (not rivers) for attack evaluation
+                uint8_t piece = gameState.getPiece(piece_x, piece_y);
+                if (!::isStone(piece)) continue;
+                
+                int attack_depth = 0;
+                
+                if (isCirclePlayer) {
+                    // Circle attacks upward (decreasing Y)
+                    // Attack depth = how far past the middle we've gone toward enemy scoring area
+                    if (piece_y < enemy_territory_start) {
+                        attack_depth = enemy_territory_start - piece_y;
+                        
+                        // Extra bonus for being in enemy scoring columns
+                        const auto& score_cols = gameState.getScoreCols();
+                        if (std::find(score_cols.begin(), score_cols.end(), piece_x) != score_cols.end()) {
+                            attack_depth += 2;  // Bonus depth for being in scoring column
+                        }
+                    }
+                } else {
+                    // Square attacks downward (increasing Y)
+                    if (piece_y > enemy_territory_start) {
+                        attack_depth = piece_y - enemy_territory_start;
+                        
+                        // Extra bonus for being in enemy scoring columns
+                        const auto& score_cols = gameState.getScoreCols();
+                        if (std::find(score_cols.begin(), score_cols.end(), piece_x) != score_cols.end()) {
+                            attack_depth += 2;  // Bonus depth for being in scoring column
+                        }
+                    }
+                }
+                
+                if (attack_depth > 0) {
+                    attack_depths.push_back(attack_depth);
+                }
+            }
+            
+            return attack_depths;
+        }
+
+        // Count stones in enemy half of the board
+        int countStonesInEnemyHalf(const GameState& gameState, bool isCirclePlayer) const {
+            int count = 0;
+            int total_rows = gameState.getRows();
+            int enemy_half_start = isCirclePlayer ? 0 : (total_rows / 2);
+            int enemy_half_end = isCirclePlayer ? (total_rows / 2) : total_rows;
+            
+            const auto& player_positions = gameState.getPlayerPiecePositions(isCirclePlayer);
+            
+            for (const auto& pos : player_positions) {
+                int y = pos.second;
+                uint8_t piece = gameState.getPiece(pos.first, y);
+                
+                // Only count stones (not rivers)
+                if (::isStone(piece) && y >= enemy_half_start && y < enemy_half_end) {
+                    count++;
+                }
+            }
+            
+            return count;
+        }
+
+        // Count stones in scoring columns (anywhere on board)
+        int countStonesInScoringColumns(const GameState& gameState, bool isCirclePlayer) const {
+            int count = 0;
+            const auto& score_cols = gameState.getScoreCols();
+            const auto& player_positions = gameState.getPlayerPiecePositions(isCirclePlayer);
+            
+            for (const auto& pos : player_positions) {
+                int x = pos.first;
+                uint8_t piece = gameState.getPiece(x, pos.second);
+                
+                // Only count stones in scoring columns
+                if (::isStone(piece)) {
+                    if (std::find(score_cols.begin(), score_cols.end(), x) != score_cols.end()) {
+                        count++;
+                    }
+                }
+            }
+            
+            return count;
+        }
+
+
+        // ================= RIVER-BUILDING EVALUATION ========================
+        
+         // Evaluate river combinations - rivers that connect to extend reach
+        float evaluateRiverCombos(const GameState& gameState, bool isCirclePlayer) const {
+            float combo_score = 0.0f;
+            const auto& player_positions = gameState.getPlayerPiecePositions(isCirclePlayer);
+            
+            // Find all our rivers
+            std::vector<std::pair<int,int>> our_rivers;
+            for (const auto& pos : player_positions) {
+                uint8_t piece = gameState.getPiece(pos.first, pos.second);
+                if (::isRiver(piece)) {
+                    our_rivers.push_back(pos);
+                }
+            }
+            
+            // Check each river pair for connectivity
+            for (size_t i = 0; i < our_rivers.size(); ++i) {
+                for (size_t j = i + 1; j < our_rivers.size(); ++j) {
+                    float connection_score = evaluateRiverConnection(gameState, our_rivers[i], our_rivers[j], isCirclePlayer);
+                    combo_score += connection_score;
+                }
+            }
+            
+            return combo_score;
+        }
+
+        // Evaluate how well two rivers connect/combo together
+        float evaluateRiverConnection(const GameState& gameState, const std::pair<int,int>& river1, 
+                                    const std::pair<int,int>& river2, bool isCirclePlayer) const {
+            float connection_score = 0.0f;
+            
+            // Get flow destinations from both rivers
+            auto destinations1 = simulateRiverFlow(gameState, river1.first, river1.second, isCirclePlayer);
+            auto destinations2 = simulateRiverFlow(gameState, river2.first, river2.second, isCirclePlayer);
+            
+            // Check if river1 can reach river2's position (or vice versa)
+            for (const auto& dest : destinations1) {
+                if (dest == river2) {
+                    connection_score += 5.0f; // Direct connection bonus
+                    break;
+                }
+            }
+            
+            // Check for overlapping reachable areas (rivers that reach the same strategic areas)
+            int shared_territory = 0;
+            for (const auto& dest1 : destinations1) {
+                for (const auto& dest2 : destinations2) {
+                    // If both rivers can reach positions close to each other
+                    int distance = abs(dest1.first - dest2.first) + abs(dest1.second - dest2.second);
+                    if (distance <= 2) { // Within 2 Manhattan distance
+                        shared_territory++;
+                    }
+                }
+            }
+            
+            connection_score += shared_territory * 1.0f; // Bonus for shared territorial control
+            
+            return connection_score;
+        }
+
+        // Simple mobility evaluation - count reachable positions in opponent area
+        float evaluateRiverMobility(const GameState& gameState, bool isCirclePlayer) const {
+            float mobility_score = 0.0f;
+            const auto& player_positions = gameState.getPlayerPiecePositions(isCirclePlayer);
+            
+            // Check each of our rivers
+            for (const auto& pos : player_positions) {
+                int x = pos.first, y = pos.second;
+                uint8_t piece = gameState.getPiece(x, y);
+                
+                if (::isRiver(piece)) {
+                    // Count positions this river can reach in opponent territory
+                    int reachable_opponent_positions = countReachableOpponentPositions(gameState, x, y, isCirclePlayer);
+                    mobility_score += reachable_opponent_positions * 3.0f; // 3 points per reachable position
+                    
+                    // Bonus for reaching scoring area specifically
+                    int scoring_area_reach = countReachableScoringPositions(gameState, x, y, isCirclePlayer);
+                    mobility_score += scoring_area_reach * 10.0f; // 10 points per scoring position reachable
+                }
+            }
+            
+            return mobility_score;
+        }
+
+            // Count how many positions in opponent half this river can reach
+        int countReachableOpponentPositions(const GameState& gameState, int river_x, int river_y, bool isCirclePlayer) const {
+            int reachable_count = 0;
+            int opponent_half_start = isCirclePlayer ? 0 : (gameState.getRows() / 2);
+            int opponent_half_end = isCirclePlayer ? (gameState.getRows() / 2) : gameState.getRows();
+            
+            // Simple flow simulation - check all directions from this river
+            std::vector<std::pair<int,int>> destinations = simulateRiverFlow(gameState, river_x, river_y, isCirclePlayer);
+            
+            for (const auto& dest : destinations) {
+                int dest_y = dest.second;
+                // Count if destination is in opponent territory
+                if (dest_y >= opponent_half_start && dest_y < opponent_half_end) {
+                    reachable_count++;
+                }
+            }
+            
+            return reachable_count;
+        }
+        
+            // Count how many scoring positions this river can reach
+        int countReachableScoringPositions(const GameState& gameState, int river_x, int river_y, bool isCirclePlayer) const {
+            int scoring_reach = 0;
+            const auto& score_cols = gameState.getScoreCols();
+            int target_scoring_row = isCirclePlayer ? 2 : (gameState.getRows() - 3); // opponent's scoring row
+            
+            std::vector<std::pair<int,int>> destinations = simulateRiverFlow(gameState, river_x, river_y, isCirclePlayer);
+            
+            for (const auto& dest : destinations) {
+                int dest_x = dest.first, dest_y = dest.second;
+                // Check if this destination is in opponent's scoring area
+                if (dest_y == target_scoring_row) {
+                    for (int score_col : score_cols) {
+                        if (dest_x == score_col) {
+                            scoring_reach++;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            return scoring_reach;
+        }
+        
+        // Simple river flow simulation - just follow the river orientation
+        std::vector<std::pair<int,int>> simulateRiverFlow(const GameState& gameState, int start_x, int start_y, bool isCirclePlayer) const {
+            std::vector<std::pair<int,int>> reachable_positions;
+            uint8_t river_piece = gameState.getPiece(start_x, start_y);
+            
+            if (!::isRiver(river_piece)) return reachable_positions;
+            
+            // Determine flow directions based on river orientation
+            std::vector<std::pair<int,int>> directions;
+            if (::isHorizontal(river_piece)) {
+                directions = {{1, 0}, {-1, 0}}; // left and right
+            } else {
+                directions = {{0, 1}, {0, -1}}; // up and down
+            }
+            
+            // Follow each direction until blocked
+            for (const auto& dir : directions) {
+                int current_x = start_x + dir.first;
+                int current_y = start_y + dir.second;
+                
+                // Follow this direction while we can
+                while (gameState.inBounds(current_x, current_y)) {
+                    uint8_t current_piece = gameState.getPiece(current_x, current_y);
+                    
+                    if (current_piece == EMPTY) {
+                        // Empty position - can reach here
+                        reachable_positions.push_back({current_x, current_y});
+                        current_x += dir.first;
+                        current_y += dir.second;
+                    } else if (::isRiver(current_piece)) {
+                        // Another river - continue flow but don't count as reachable (already has piece)
+                        current_x += dir.first;
+                        current_y += dir.second;
+                    } else {
+                        // Stone or opponent piece - flow stops
+                        break;
+                    }
+                }
+            }
+            
+            return reachable_positions;
+        }
+
 // public:
 //     // Clear evaluation cache (useful for testing)
 //     void clearCache() const {
@@ -2109,7 +2432,10 @@ private:
         g_logger.log(LogLevel::DEBUG, "MINIMAX: Ordered " + std::to_string(orderedMoves.size()) + 
                     " root moves for depth " + std::to_string(depth));
         
-        for (const Move& move : orderedMoves) {
+        for (int i = 0; i < orderedMoves.size(); i++) {
+            
+            const Move& move = orderedMoves[i];
+
             if (timeManager.shouldStop()) {
                 bestResult.timeout_occurred = true;
                 g_logger.logHierarchical(0, "TIMEOUT after " + std::to_string(moves_evaluated) + 
