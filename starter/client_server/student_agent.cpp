@@ -215,7 +215,7 @@ public:
 };
 
 // Global logger instance
-// static AILogger g_logger;
+static AILogger g_logger;
 
 /*
 =========================================================
@@ -401,7 +401,6 @@ private:
     std::vector<std::vector<uint8_t>> board;
     int rows, cols;
     std::vector<int> score_cols;
-    // uint64_t hash_value;
     
     // Position tracking sets for O(log n) operations
     mutable std::set<std::pair<int,int>> circle_piece_positions;
@@ -413,7 +412,6 @@ private:
     
     int getBottomScoreRow() const { return rows - 3; }
     
-<<<<<<< Updated upstream
     // Position tracking helpers
     void addPiecePosition(int x, int y, uint8_t piece) {
         if (piece == EMPTY) return;
@@ -438,14 +436,7 @@ private:
     void initializePositionTracking() {
         circle_piece_positions.clear();
         square_piece_positions.clear();
-=======
->>>>>>> Stashed changes
-    // // Hash computation for transposition tables
-    // void computeHash() {
-    //     hash_value = 0;
-    //     std::hash<uint64_t> hasher;
         
-<<<<<<< Updated upstream
         for (int y = 0; y < rows; ++y) {
             for (int x = 0; x < cols; ++x) {
                 uint8_t piece = board[y][x];
@@ -455,34 +446,6 @@ private:
             }
         }
     }
-=======
-    //     for (int y = 0; y < rows; ++y) {
-    //         for (int x = 0; x < cols; ++x) {
-    //             if (board[y][x] != EMPTY) {
-    //                 // Zobrist-like hashing: position + piece type
-    //                 uint64_t piece_hash = (uint64_t(board[y][x]) << 16) | (uint64_t(y) << 8) | uint64_t(x);
-    //                 hash_value ^= hasher(piece_hash);
-    //             }
-    //         }
-    //     }
-    // }
->>>>>>> Stashed changes
-    
-    // Hash computation for transposition tables
-    // void computeHash() {
-    //     hash_value = 0;
-    //     std::hash<uint64_t> hasher;
-    //     
-    //     for (int y = 0; y < rows; ++y) {
-    //         for (int x = 0; x < cols; ++x) {
-    //             if (board[y][x] != EMPTY) {
-    //                 // Zobrist-like hashing: position + piece type
-    //                 uint64_t piece_hash = (uint64_t(board[y][x]) << 16) | (uint64_t(y) << 8) | uint64_t(x);
-    //                 hash_value ^= hasher(piece_hash);
-    //             }
-    //         }
-    //     }
-    // }
     
 public:
     // Constructor
@@ -496,10 +459,7 @@ public:
             score_cols.push_back(i);
         }
         
-<<<<<<< Updated upstream
         initializePositionTracking();
-=======
->>>>>>> Stashed changes
         // computeHash();
     }
     
@@ -509,6 +469,11 @@ public:
           score_cols(other.score_cols), //hash_value(other.hash_value),
           circle_piece_positions(other.circle_piece_positions),
           square_piece_positions(other.square_piece_positions) {}
+
+    // Deep copy for search tree
+    GameState clone() const {
+        return GameState(*this);
+    }
     
     // Assignment operator
     GameState& operator=(const GameState& other) {
@@ -539,26 +504,8 @@ public:
                 }
             }
         }
-<<<<<<< Updated upstream
-        // initializePositionTracking();
+        initializePositionTracking();
         // computeHash();
-    }
-    
-    // Update hash incrementally after move (for efficiency)
-    // void updateHashAfterMove(int from_x, int from_y, int to_x, int to_y, uint8_t piece) {
-    //     // XOR out old position, XOR in new position
-    //     hash_value ^= (uint64_t(piece) << (from_x + from_y * cols)) * 0x9e3779b97f4a7c15ULL;
-    //     hash_value ^= (uint64_t(piece) << (to_x + to_y * cols)) * 0x9e3779b97f4a7c15ULL;
-    // }
-=======
-        // computeHash();
-    }
->>>>>>> Stashed changes
-
-    
-    // Deep copy for search tree
-    GameState clone() const {
-        return GameState(*this);
     }
     
     // Accessors
@@ -713,12 +660,9 @@ public:
             
             board[to_y][to_x] = piece;
             board[from_y][from_x] = EMPTY;
-<<<<<<< Updated upstream
             
             addPiecePosition(to_x, to_y, piece);
             
-=======
->>>>>>> Stashed changes
             // computeHash();
         }
     }
@@ -741,13 +685,10 @@ public:
             board[to_y][to_x] = our_piece;
             // Clear original position
             board[from_y][from_x] = EMPTY;
-<<<<<<< Updated upstream
             
             addPiecePosition(to_x, to_y, our_piece);
             addPiecePosition(push_x, push_y, pushed_piece);
             
-=======
->>>>>>> Stashed changes
             // computeHash();
         }
     }
@@ -772,15 +713,12 @@ public:
             // River -> Stone
             new_piece = isCircleOwner ? CIRCLE_STONE : SQUARE_STONE;
         }
-<<<<<<< Updated upstream
         
         // Update position tracking (piece stays in same position but changes type)
         removePiecePosition(x, y, old_piece);
         board[y][x] = new_piece;
         addPiecePosition(x, y, new_piece);
         
-=======
->>>>>>> Stashed changes
         // computeHash();
     }
     
@@ -804,15 +742,12 @@ public:
         } else {
             return; // Invalid piece for rotation
         }
-<<<<<<< Updated upstream
         
         // Update position tracking (piece stays in same position but changes orientation)
         removePiecePosition(x, y, old_piece);
         board[y][x] = new_piece;
         addPiecePosition(x, y, new_piece);
         
-=======
->>>>>>> Stashed changes
         // computeHash();
     }
     
@@ -849,7 +784,7 @@ struct Move {
         return action == other.action && from == other.from && to == other.to && 
                pushed_to == other.pushed_to && orientation == other.orientation;
     }
-    
+ 
     // Inequality operator for comparison
     bool operator!=(const Move& other) const {
         return !(*this == other);
@@ -878,28 +813,22 @@ std::string AILogger::moveToString(const Move& move) const {
 
 class BoardEvaluator {
 private:
-    // Evaluation caching for performance
-    // mutable std::unordered_map<uint64_t, float> evaluation_cache;
     
-    // Performance optimization: pre-computed scoring area bounds
     struct ScoringArea {
         int row = 0;  // Inclusive bounds for scoring rows
         std::vector<int> score_cols;  // Scoring columns
     };
     
-    mutable ScoringArea circle_scoring;   // Circle's scoring area (bottom rows)
-    mutable ScoringArea square_scoring;   // Square's scoring area (top rows)
+    mutable ScoringArea circle_scoring;   
+    mutable ScoringArea square_scoring;
     mutable bool scoring_areas_initialized = false;
 
-    float weight1 = 300.0f;
-    float weight2 = 100.0f; //<180 onwards
+    float weight1 = 400.0f;
+    float weight2 = 180.0f; //<180 onwards
     float weight3 = -80.0f;
-    float weight4 = 150.0f;
-    float weight5 = 200.0f;
-    float weight6 = 200.0f;
-    float weight7 = 200.0f;
+    float weight4 = 100.0f;
+
     
-    // Initialize scoring areas based on game configuration
     void initializeScoringAreas(const GameState& gameState) const {
         if (scoring_areas_initialized) return;
         
@@ -907,49 +836,33 @@ private:
         const auto& score_cols = gameState.getScoreCols();
         
         // Circle scores in bottom rows (rows-3 to rows-1)
-        circle_scoring.row = rows - 3;
+        circle_scoring.row = 2;
         circle_scoring.score_cols = score_cols;
         
         // Square scores in top rows (0 to 2)
-        square_scoring.row = 2;
+        square_scoring.row = rows-3;
         square_scoring.score_cols = score_cols;
         
         scoring_areas_initialized = true;
     }
     
 public:
-    // ==================== PHASE 4A: CORE EVALUATION ====================
-    
-    // Main evaluation function - exact compatibility with Python basic_evaluate_board
-    float Evaluateboard(const GameState& gameState, bool isCirclePlayer) const {
-        initializeScoringAreas(gameState);
 
-        // Check cache first
-        // uint64_t hash = gameState.getHash();
-        // uint64_t cache_key = hash ^ (isCirclePlayer ? 1ULL : 0ULL);  // Player-specific cache
+    float EvaluateBoard(const GameState& gameState, bool isCirclePlayer) const {
+
+        initializeScoringAreas(gameState);
+        float score1 = computeBasicEvaluation(gameState, isCirclePlayer);
+        float score2 = evaluatePosition(gameState, isCirclePlayer);
+        float score3 = evaluateSafety(gameState, isCirclePlayer);
+        float score4 = evaluateMobility(gameState, isCirclePlayer);
         
-        // auto cache_it = evaluation_cache.find(cache_key);
-        // if (cache_it != evaluation_cache.end()) {
-            //     return cache_it->second;
-            // }
-            
-            float score1 = computeBasicEvaluation(gameState, isCirclePlayer);
-            float score2 = evaluatePosition(gameState, isCirclePlayer);
-            float score3 = evaluateSafety(gameState, isCirclePlayer);
-            float score4 = evaluateMobility(gameState, isCirclePlayer);
-            
-            // Cache the result
-            // evaluation_cache[cache_key] = score;
-            float score = score1*weight1 + score2*weight2 + score3*weight3 + score4*weight4;
-            return score;
-        }
-        
-    // Core evaluation computation - mirrors Python basic_evaluate_board exactly
+        float score = score1*weight1 + score2*weight2 + score3*weight3 + score4*weight4;
+        return score;
+    }
+    
     float computeBasicEvaluation(const GameState& gameState, bool isCirclePlayer) const {
         
         float score = 0.0f;
-        
-        // Count stones in scoring areas (matches Python logic exactly)
         int player_scoring_stones = countStonesInScoringArea(gameState, isCirclePlayer);
         int opponent_scoring_stones = countStonesInScoringArea(gameState, !isCirclePlayer);
         
@@ -959,13 +872,12 @@ public:
         int player_scoring_Rivers = countRiversInScoringArea(gameState, isCirclePlayer);
         int opponent_scoring_Rivers = countRiversInScoringArea(gameState, !isCirclePlayer);
         
-        score += player_scoring_Rivers * 0.6f;   // +100 per scoring River
-        score -= opponent_scoring_Rivers * 0.6f; // -100 per opponent scoring River
+        score += player_scoring_Rivers * 0.3f;   // +100 per scoring River
+        score -= opponent_scoring_Rivers * 0.3f; // -100 per opponent scoring River
         
         return score;
     }
     
-    // Position evaluation - territorial control and piece placement
     float evaluatePosition(const GameState& gameState, bool isCirclePlayer) const {
         std::vector<int> player_distances = getDistancesFromScoringArea(gameState, isCirclePlayer);
         // std::vector<int> opponent_distances = getDistancesFromScoringArea(gameState, !isCirclePlayer);
@@ -979,9 +891,7 @@ public:
                 int clamped_dist = std::min(dist, 24);  // Max distance gives score of 1
                 score += (25.0f - clamped_dist);
             }
-            
-            // Extra rewards for pieces marching towards closer values
-            // Bonus increases quadratically as pieces get closer
+
             for (int dist : distances) {
                 if (dist <= 1) {
                     score += 25.0f;  // Huge bonus for distance 1 (immediate threat)
@@ -997,59 +907,27 @@ public:
                 }
                 // No extra bonus for very distant pieces (dist > 10)
             }
-            
-            // Additional bonus for having multiple close pieces (clustering reward)
-            // int very_close_count = std::count_if(distances.begin(), distances.end(), 
-            //                                    [](int d) { return d <= 3; });
-            // if (very_close_count > 1) {
-            //     score += very_close_count * very_close_count * 5.0f;  // Quadratic clustering bonus
-            // }
             return score;
         };
-        
+
         float player_score = calculatePositionScore(player_distances);
         // float opponent_score = calculatePositionScore(opponent_distances);
         
-        return (player_score)/300;
+        return (player_score)/50;
     }
     
-    // Threat evaluation - immediate scoring opportunities
-    float evaluateThreats(const GameState& gameState, bool isCirclePlayer) const {
-        // TODO: Advanced threat evaluation
-        // - Pieces 1-2 moves from scoring
-        // - Attacking/defending patterns
-        // - Forced sequences analysis
-        return 0.0f;  // Placeholder
-    }
-    
-    // Mobility evaluation - stones adjacent to rivers have higher mobility
     float evaluateMobility(const GameState& gameState, bool isCirclePlayer) const {
-        // Count my stones adjacent to any river
+
         int my_mobile_stones = countStonesAdjacentToRivers(gameState, isCirclePlayer);
         
-        // Count opponent stones adjacent to any river
         int opponent_mobile_stones = countStonesAdjacentToRivers(gameState, !isCirclePlayer);
         
-        return static_cast<float>(my_mobile_stones - opponent_mobile_stones);
+        return static_cast<float>(my_mobile_stones);
     }
     
-    // River control evaluation - strategic river placement
-    float evaluateRiverControl(const GameState& gameState, bool isCirclePlayer) const {
-        // TODO: River control evaluation
-        // - Connected river networks
-        // - Strategic river positioning
-        // - Flow control advantages
-        return 0.0f;  // Placeholder
-    }
-    
-    // Safety evaluation - open positions around scoring areas
-    float evaluateSafety(const GameState& gameState, bool isCirclePlayer) const {
-        initializeScoringAreas(gameState);
-        
-        // Count open positions around opponent's scoring area
+    float evaluateSafety(const GameState& gameState, bool isCirclePlayer) const {        
+
         // int opponent_open_sides = countOpenSidesAroundScoringArea(gameState, !isCirclePlayer);
-        
-        // Count open positions around my scoring area
         int my_open_sides = countOpenSidesAroundScoringArea(gameState, isCirclePlayer);
         
         return (my_open_sides)/3.0f;
@@ -1707,17 +1585,6 @@ private:
         // Safety check: always reserve emergency buffer
         // float usable_time = std::max(0.1f, remaining_time - emergency_buffer);
         
-        // Basic time allocation strategy
-        if (remaining_time > 30.0f) {
-            // Early/mid game: use moderate time
-            return std::min(3.0f, usable_time * 0.15f);
-        } else if (remaining_time > 10.0f) {
-            // Late game: be more aggressive with time usage
-            return std::min(6.0f, usable_time * 0.25f);
-        } else {
-            // Endgame: use most remaining time but keep emergency reserve
-            return std::min(remaining_time * 0.5f, usable_time);
-        }
         // // Basic time allocation strategy
         // if (remaining_time > 30.0f) {
         //     // Early/mid game: use moderate time
@@ -1763,20 +1630,6 @@ struct TTEntry {
     TTEntry(float eval, const Move& move, int d, NodeType type) 
         : evaluation(eval), best_move(move), depth(d), node_type(type) {}
 };
-// struct TTEntry {
-//     uint64_t hash_key;
-//     float evaluation;
-//     Move best_move;
-//     int depth;
-//     int age;
-//     enum NodeType {
-//         EXACT = 0,
-//         LOWER_BOUND = 1,
-//         UPPER_BOUND = 2
-//     } node_type;
-//     
-//     TTEntry() : hash_key(0), evaluation(0.0f), depth(-1), age(0), node_type(EXACT) {}
-// };
 
 class TranspositionTable {
 private:
@@ -1784,76 +1637,45 @@ private:
     static constexpr int MAX_BOARD_SIZE = 20;
     
     std::unordered_map<uint64_t, TTEntry> table;
-<<<<<<< Updated upstream
-// class TranspositionTable {
-// private:
-//     static constexpr size_t TABLE_SIZE = 1024 * 256;  // 256K entries
-//     static constexpr size_t TABLE_MASK = TABLE_SIZE - 1;
-//     static constexpr int MAX_BOARD_SIZE = 20;
-
-//     std::vector<TTEntry> table;
-//     int current_age;
-    
-//     // Zobrist hash tables (integrated minimal implementation)
-//     static uint64_t piece_square_table[7][MAX_BOARD_SIZE][MAX_BOARD_SIZE];
-//     static uint64_t player_to_move_key;
-//     static bool zobrist_initialized;
-=======
     
     // Zobrist hash tables (minimal implementation)
     static uint64_t piece_square_table[7][MAX_BOARD_SIZE][MAX_BOARD_SIZE];
     static uint64_t player_to_move_key;
     static bool zobrist_initialized;
->>>>>>> Stashed changes
     
-//     static void initializeZobrist() {
-//         if (zobrist_initialized) return;
+    static void initializeZobrist() {
+        if (zobrist_initialized) return;
         
-//         std::mt19937_64 rng(42);  // Fixed seed for reproducibility
-//         std::uniform_int_distribution<uint64_t> dist;
+        std::mt19937_64 rng(42);  // Fixed seed for reproducibility
+        std::uniform_int_distribution<uint64_t> dist;
         
-//         // Initialize piece-square table
-//         for (int piece = 0; piece < 7; ++piece) {
-//             for (int y = 0; y < MAX_BOARD_SIZE; ++y) {
-//                 for (int x = 0; x < MAX_BOARD_SIZE; ++x) {
-//                     piece_square_table[piece][y][x] = dist(rng);
-//                 }
-//             }
-//         }
+        // Initialize piece-square table
+        for (int piece = 0; piece < 7; ++piece) {
+            for (int y = 0; y < MAX_BOARD_SIZE; ++y) {
+                for (int x = 0; x < MAX_BOARD_SIZE; ++x) {
+                    piece_square_table[piece][y][x] = dist(rng);
+                }
+            }
+        }
         
-//         player_to_move_key = dist(rng);
-//         zobrist_initialized = true;
-//     }
+        player_to_move_key = dist(rng);
+        zobrist_initialized = true;
+    }
     
 public:
     TranspositionTable() {
         initializeZobrist();
         table.reserve(MAX_TABLE_SIZE);
     }
-// public:
-//     TranspositionTable() : current_age(0) {
-//         table.resize(TABLE_SIZE);
-//         initializeZobrist();
-//         clear();
-//     }
     
-<<<<<<< Updated upstream
-//     void clear() {
-//         std::fill(table.begin(), table.end(), TTEntry{});
-//         current_age++;
-//     }
-=======
     void clear() {
         table.clear();
     }
->>>>>>> Stashed changes
     
     void newSearch() {
         // Optionally clear old entries if table gets too large
         if (table.size() > MAX_TABLE_SIZE) {
             table.clear();
-<<<<<<< Updated upstream
-=======
         }
     }
     
@@ -1869,102 +1691,55 @@ public:
                     hash ^= piece_square_table[piece][y][x];
                 }
             }
->>>>>>> Stashed changes
         }
+        
+        // Hash player to move
+        if (isCircleToMove) {
+            hash ^= player_to_move_key;
+        }
+        
+        return hash;
     }
-//     void newSearch() {
-//         current_age++;
-//     }
     
-//     // Compute Zobrist hash for a game state - OPTIMIZED using position sets
-//     uint64_t computeHash(const GameState& state, bool isCircleToMove) const {
-//         uint64_t hash = 0;
+    // Probe the transposition table
+    bool probe(uint64_t hash_key, int depth, float alpha, float beta, 
+               float& evaluation, Move& best_move) const {
         
-<<<<<<< Updated upstream
-//         // Hash circle pieces
-//         for (const auto& pos : state.getCirclePiecePositions()) {
-//             int x = pos.first, y = pos.second;
-//             if (y < MAX_BOARD_SIZE && x < MAX_BOARD_SIZE) {
-//                 uint8_t piece = state.getPiece(x, y);
-//                 hash ^= piece_square_table[piece][y][x];
-//             }
-//         }
-        
-//         // Hash square pieces
-//         for (const auto& pos : state.getSquarePiecePositions()) {
-//             int x = pos.first, y = pos.second;
-//             if (y < MAX_BOARD_SIZE && x < MAX_BOARD_SIZE) {
-//                 uint8_t piece = state.getPiece(x, y);
-//                 hash ^= piece_square_table[piece][y][x];
-//             }
-//         }
-        
-//         // Hash player to move
-//         if (isCircleToMove) {
-//             hash ^= player_to_move_key;
-//         }
-        
-//         return hash;
-//     }
-    
-//     // Probe the transposition table
-//     bool probe(uint64_t hash_key, int depth, float alpha, float beta, 
-//                float& evaluation, Move& best_move) const {
-        
-=======
->>>>>>> Stashed changes
         auto it = table.find(hash_key);
         if (it == table.end() || it->second.depth < depth) {
             return false;
         }
-//         size_t index = hash_key & TABLE_MASK;
-//         const TTEntry& entry = table[index];
         
-<<<<<<< Updated upstream
-//         // Check if entry is valid and matches our position
-//         if (entry.hash_key != hash_key || entry.depth < depth) {
-//             return false;
-//         }
-        
-=======
->>>>>>> Stashed changes
         const TTEntry& entry = it->second;
         best_move = entry.best_move;
-//         best_move = entry.best_move;
         
-//         // Check if we can use this evaluation based on node type
-//         switch (entry.node_type) {
-//             case TTEntry::EXACT:
-//                 evaluation = entry.evaluation;
-//                 return true;
+        // Check if we can use this evaluation based on node type
+        switch (entry.node_type) {
+            case TTEntry::EXACT:
+                evaluation = entry.evaluation;
+                return true;
                 
-//             case TTEntry::LOWER_BOUND:
-//                 if (entry.evaluation >= beta) {
-//                     evaluation = entry.evaluation;
-//                     return true;
-//                 }
-//                 break;
+            case TTEntry::LOWER_BOUND:
+                if (entry.evaluation >= beta) {
+                    evaluation = entry.evaluation;
+                    return true;
+                }
+                break;
                 
-//             case TTEntry::UPPER_BOUND:
-//                 if (entry.evaluation <= alpha) {
-//                     evaluation = entry.evaluation;
-//                     return true;
-//                 }
-//                 break;
-//         }
+            case TTEntry::UPPER_BOUND:
+                if (entry.evaluation <= alpha) {
+                    evaluation = entry.evaluation;
+                    return true;
+                }
+                break;
+        }
         
-//         return false;  // Can't use this entry's evaluation
-//     }
+        return false;  // Can't use this entry's evaluation
+    }
     
-<<<<<<< Updated upstream
-//     // Store position in transposition table
-//     void store(uint64_t hash_key, float evaluation, const Move& best_move, 
-//                int depth, float original_alpha, float beta) {
-=======
     // Store position in transposition table
     void store(uint64_t hash_key, float evaluation, const Move& best_move, 
                int depth, float original_alpha, float beta) {
->>>>>>> Stashed changes
         
         // Determine node type
         TTEntry::NodeType node_type;
@@ -1975,22 +1750,7 @@ public:
         } else {
             node_type = TTEntry::EXACT;
         }
-//         size_t index = hash_key & TABLE_MASK;
-//         TTEntry& entry = table[index];
         
-<<<<<<< Updated upstream
-//         // Determine node type
-//         TTEntry::NodeType node_type;
-//         if (evaluation <= original_alpha) {
-//             node_type = TTEntry::UPPER_BOUND;
-//         } else if (evaluation >= beta) {
-//             node_type = TTEntry::LOWER_BOUND;
-//         } else {
-//             node_type = TTEntry::EXACT;
-//         }
-        
-=======
->>>>>>> Stashed changes
         // Check if we should replace existing entry
         auto it = table.find(hash_key);
         if (it == table.end() || it->second.depth <= depth) {
@@ -2002,33 +1762,18 @@ public:
     // Get table statistics
     size_t size() const { return table.size(); }
 };
-//         // Replace if empty, deeper, or much older
-//         bool should_replace = (entry.hash_key == 0) ||
-//                              (entry.depth <= depth) ||
-//                              (entry.age < current_age - 2);
-        
-//         if (should_replace) {
-//             entry.hash_key = hash_key;
-//             entry.evaluation = evaluation;
-//             entry.best_move = best_move;
-//             entry.depth = depth;
-//             entry.node_type = node_type;
-//             entry.age = current_age;
-//         }
-//     }
-// };
 
-// // Static member definitions
-// uint64_t TranspositionTable::piece_square_table[7][MAX_BOARD_SIZE][MAX_BOARD_SIZE];
-// uint64_t TranspositionTable::player_to_move_key;
-// bool TranspositionTable::zobrist_initialized = false;
+// Static member definitions
+uint64_t TranspositionTable::piece_square_table[7][MAX_BOARD_SIZE][MAX_BOARD_SIZE];
+uint64_t TranspositionTable::player_to_move_key;
+bool TranspositionTable::zobrist_initialized = false;
 
 class MinimaxEngine {
 private:
     BoardEvaluator* evaluator;
     MoveGenerator* moveGenerator;
     TimeManager timeManager;
-    // TranspositionTable tt;
+    TranspositionTable tt;
     
     // Search statistics
     int nodes_searched;
@@ -2056,10 +1801,6 @@ public:
         
         // Clear PV moves from previous search
         clearPVMoves();
-<<<<<<< Updated upstream
-        // tt.newSearch();
-=======
->>>>>>> Stashed changes
         
         // Reset search statistics
         nodes_searched = 0;
@@ -2095,7 +1836,7 @@ public:
         
         g_logger.log(LogLevel::DEBUG, "MINIMAX: Starting iterative deepening");
         
-        for (int depth = 1; depth <= 6; ++depth) {  // Maximum depth of 6
+        for (int depth = 1; depth <= MAX_DEPTH; ++depth) { 
             if (timeManager.shouldStop()) {
                 g_logger.log(LogLevel::DEBUG, "MINIMAX: Time limit reached at depth " + std::to_string(depth));
                 break;
@@ -2103,11 +1844,6 @@ public:
             
             g_logger.log(LogLevel::DEBUG, "MINIMAX: Searching at depth " + std::to_string(depth));
             int nodes_before = nodes_searched;
-<<<<<<< Updated upstream
-        for (int depth = 1; depth <= MAX_DEPTH; ++depth) {  
-            if (timeManager.shouldStop()) break;
-=======
->>>>>>> Stashed changes
             
             SearchResult currentResult = searchAtDepth(position, depth, isCirclePlayer, rootMoves);
             
@@ -2129,7 +1865,7 @@ public:
             }
             
             // If we found a very good position, don't waste more time
-            if (bestResult.evaluation > 50.0f) {
+            if (bestResult.evaluation > 100000.0f) {
                 g_logger.log(LogLevel::DEBUG, "MINIMAX: Found winning position, stopping early");
                 break;
             }
@@ -2296,7 +2032,7 @@ private:
         }
         
         // Compute position hash
-        // uint64_t position_hash = tt.computeHash(position, isCirclePlayer);
+        uint64_t position_hash = tt.computeHash(position, isCirclePlayer);
         
         // Probe transposition table
         float tt_evaluation;
@@ -2309,18 +2045,13 @@ private:
             }
             return tt_evaluation;
         }
-        // float tt_evaluation;
-        // Move tt_best_move;
-        // if (tt.probe(position_hash, depth, alpha, beta, tt_evaluation, tt_best_move)) {
-        //     return tt_evaluation;
-        // }
         
         // Terminal conditions
         if (depth == 0) {
-            float evaluation = evaluator->Evaluateboard(position, isCirclePlayer);
+            float evaluation = evaluator->EvaluateBoard(position, isCirclePlayer);
             // Store leaf evaluation in TT
-            // Move dummy_move;
-            // tt.store(position_hash, evaluation, dummy_move, depth, alpha, beta);
+            Move dummy_move;
+            tt.store(position_hash, evaluation, dummy_move, depth, alpha, beta);
             return evaluation;
         }
         
@@ -2341,23 +2072,13 @@ private:
         if (moves.empty()) {
             // No moves available - likely a loss
             float evaluation = -50.0f;
-            // Move dummy_move;
-            // tt.store(position_hash, evaluation, dummy_move, depth, alpha, beta);
+            Move dummy_move;
+            tt.store(position_hash, evaluation, dummy_move, depth, alpha, beta);
             return evaluation;
         }
         
         // Order moves using PV from previous iteration + TT move
         std::vector<Move> orderedMoves = orderMovesWithPV(moves, position_hash, current_depth);
-<<<<<<< Updated upstream
-        // Move ordering: try TT best move first
-        // if (!tt_best_move.action.empty()) {
-        //     auto it = std::find(moves.begin(), moves.end(), tt_best_move);
-        //     if (it != moves.end()) {
-        //         std::swap(*it, moves[0]);
-        //     }
-        // }
-=======
->>>>>>> Stashed changes
         
         float maxEval = -1000000.0f;
         Move best_move = orderedMoves[0];  // Default best move
@@ -2406,10 +2127,6 @@ private:
         if (!best_move.action.empty()) {
             storePVMove(position_hash, current_depth, best_move);
         }
-<<<<<<< Updated upstream
-        // tt.store(position_hash, maxEval, best_move, depth, original_alpha, beta);
-=======
->>>>>>> Stashed changes
         
         return maxEval;
     }
@@ -2460,7 +2177,7 @@ public:
     int getMaxDepthReached() const { return max_depth_reached; }
     
     // Clear transposition table (for testing or new games)
-    // void clearTT() { tt.clear(); }
+    void clearTT() { tt.clear(); }
 };
 
 
@@ -2481,37 +2198,6 @@ public:
         searchEngine = new MinimaxEngine(&evaluator, &moveGen);
     }
     
-    // Helper function to convert GameState to board format using position sets (optimized)
-    std::vector<std::vector<std::map<std::string, std::string>>> convertGameStateToBoard(const GameState& state) {
-        int rows = state.getRows();
-        int cols = state.getCols();
-        std::vector<std::vector<std::map<std::string, std::string>>> board_map(rows,
-            std::vector<std::map<std::string, std::string>>(cols));
-        
-        // Only populate cells that have pieces using position sets - O(n) where n = total pieces
-        for (const auto& pos : state.getCirclePiecePositions()) {
-            int x = pos.first, y = pos.second;
-            uint8_t piece = state.getPiece(x, y);
-            board_map[y][x]["owner"] = "circle";
-            board_map[y][x]["side"] = isPieceStone(piece) ? "stone" : "river";
-            if (!isPieceStone(piece)) {
-                board_map[y][x]["orientation"] = isRiverHorizontal(piece) ? "horizontal" : "vertical";
-            }
-        }
-        
-        for (const auto& pos : state.getSquarePiecePositions()) {
-            int x = pos.first, y = pos.second;
-            uint8_t piece = state.getPiece(x, y);
-            board_map[y][x]["owner"] = "square";
-            board_map[y][x]["side"] = isPieceStone(piece) ? "stone" : "river";
-            if (!isPieceStone(piece)) {
-                board_map[y][x]["orientation"] = isRiverHorizontal(piece) ? "horizontal" : "vertical";
-            }
-        }
-        
-        return board_map;
-    }
-    
     ~StudentAgent() {
         delete searchEngine;
     }
@@ -2519,18 +2205,18 @@ public:
     Move choose(const std::vector<std::vector<std::map<std::string, std::string>>>& board, int row, int col, const std::vector<int>& score_cols, float current_player_time, float opponent_time) {
         
         // Start new move logging
-        // g_logger.nextMove();
+        g_logger.nextMove();
         
         int rows = board.size();
         int cols = board[0].size();
         
         // Log move start
-        // std::stringstream move_info;
-        // move_info << "=== MOVE DECISION START === "
-        //          << "Player: " << side << ", "
-        //          << "Board: " << rows << "x" << cols << ", "
-        //          << "Time: " << current_player_time << "s (vs " << opponent_time << "s)";
-        //g_logger.log(LogLevel::DECISION, move_info.str());
+        std::stringstream move_info;
+        move_info << "=== MOVE DECISION START === "
+                 << "Player: " << side << ", "
+                 << "Board: " << rows << "x" << cols << ", "
+                 << "Time: " << current_player_time << "s (vs " << opponent_time << "s)";
+        g_logger.log(LogLevel::DECISION, move_info.str());
 
         // Convert board to GameState for minimax search
         gameState = GameState(rows, cols);
@@ -2543,68 +2229,62 @@ public:
             Move bestMove = searchEngine->getBestMove(gameState, side, 
                                                      current_player_time, opponent_time);
             
-            // Convert board to format expected by MoveGenerator for validation - OPTIMIZED
-            // auto board_map = convertGameStateToBoard(gameState);
-            
-            // Validate the move is legal using the same board format as the search
             const auto& moves = moveGen.generateAllMovesOptimized(gameState,side);
-            
-            //g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Generated " + std::to_string(moves.size()) + 
-                        // " legal moves for validation");
-            //g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Minimax returned move: " + 
-                        // bestMove.action + " (" + std::to_string(bestMove.from[0]) + "," + 
-                        // std::to_string(bestMove.from[1]) + ") -> (" + 
-                        // std::to_string(bestMove.to[0]) + "," + std::to_string(bestMove.to[1]) + ")");
+
+            g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Generated " + std::to_string(moves.size()) + 
+                        " legal moves for validation");
+            g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Minimax returned move: " + 
+                        bestMove.action + " (" + std::to_string(bestMove.from[0]) + "," + 
+                        std::to_string(bestMove.from[1]) + ") -> (" + 
+                        std::to_string(bestMove.to[0]) + "," + std::to_string(bestMove.to[1]) + ")");
             
             // Log first few legal moves for comparison
             for (size_t i = 0; i < std::min((size_t)5, moves.size()); ++i) {
                 const auto& move = moves[i];
-                //g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Legal move " + std::to_string(i+1) + ": " + 
-                            // move.action + " (" + std::to_string(move.from[0]) + "," + 
-                            // std::to_string(move.from[1]) + ") -> (" + 
-                            // std::to_string(move.to[0]) + "," + std::to_string(move.to[1]) + ")");
+                g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Legal move " + std::to_string(i+1) + ": " + 
+                            move.action + " (" + std::to_string(move.from[0]) + "," + 
+                            std::to_string(move.from[1]) + ") -> (" + 
+                            std::to_string(move.to[0]) + "," + std::to_string(move.to[1]) + ")");
             }
             
             for (const auto& move : moves) {
                 if (move == bestMove) {
-                    //g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Move found in legal moves - SUCCESS!");
-                    //g_logger.logDecision(g_logger.moveToString(bestMove), chosen_reasoning);
-                    //g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
+                    g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Move found in legal moves - SUCCESS!");
+                    g_logger.logDecision(g_logger.moveToString(bestMove), chosen_reasoning);
+                    g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
                     return bestMove;
                 }
             }
             
-            //g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Move NOT found in legal moves - FAILED!");
+            g_logger.log(LogLevel::DEBUG, "VALIDATION DEBUG: Move NOT found in legal moves - FAILED!");
             
             // Fallback: if minimax move is invalid, use first legal move
             if (!moves.empty()) {
                 // chosen_reasoning = "Minimax move invalid, using first legal move";
-                //g_logger.log(LogLevel::ERROR, "Minimax returned invalid move, using fallback");
-                //g_logger.logDecision(g_logger.moveToString(moves[0]), chosen_reasoning);
-                //g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
+                g_logger.log(LogLevel::ERROR, "Minimax returned invalid move, using fallback");
+                g_logger.logDecision(g_logger.moveToString(moves[0]), chosen_reasoning);
+                g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
                 return moves[0];
             }
         } catch (const std::exception& e) {
             // Fallback to evaluation-based selection on any search error
             chosen_reasoning = "Minimax failed with exception: " + std::string(e.what());
-            //g_logger.log(LogLevel::ERROR, "Minimax search failed: " + std::string(e.what()));
+            g_logger.log(LogLevel::ERROR, "Minimax search failed: " + std::string(e.what()));
         } catch (...) {
             chosen_reasoning = "Minimax failed with unknown exception";
-            //g_logger.log(LogLevel::ERROR, "Minimax search failed with unknown exception");
+            g_logger.log(LogLevel::ERROR, "Minimax search failed with unknown exception");
         }
         
         // FALLBACK: Use evaluation-based move selection  
-        //g_logger.log(LogLevel::INFO, "Using evaluation-based fallback selection");
+        g_logger.log(LogLevel::INFO, "Using evaluation-based fallback selection");
         
-        // Convert board to format expected by MoveGenerator - OPTIMIZED  
-        // auto board_map = convertGameStateToBoard(gameState);
         
         const auto& moves = moveGen.generateAllMovesOptimized(gameState,side);
         if (moves.empty()) {
             chosen_reasoning = "No legal moves available - emergency fallback";
-            //g_logger.log(LogLevel::ERROR, "No legal moves found!");
-            //g_logger.logDecision("emergency fallback", chosen_reasoning);
-            //g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
+            g_logger.log(LogLevel::ERROR, "No legal moves found!");
+            g_logger.logDecision("emergency fallback", chosen_reasoning);
+            g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
             return {"move", {0,0}, {0,0}, {}, ""}; // fallback
         }
         
@@ -2615,7 +2295,7 @@ public:
         // Evaluate each move and pick the best one
         for (const auto& move : moves) {
             GameState tempState = gameState;
-            float score = evaluator.Evaluateboard(tempState, isCirclePlayer);
+            float score = evaluator.EvaluateBoard(tempState, isCirclePlayer);
             
             // Add small random factor for variety when moves are equally good
             std::uniform_real_distribution<float> random_factor(-0.01f, 0.01f);
@@ -2629,12 +2309,12 @@ public:
         
         // Log final decision
         chosen_reasoning = "Evaluation-based selection (score: " + std::to_string(bestScore) + ")";
-        //g_logger.logDecision(g_logger.moveToString(bestMove), chosen_reasoning);
-        //g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
+        g_logger.logDecision(g_logger.moveToString(bestMove), chosen_reasoning);
+        g_logger.log(LogLevel::DECISION, "=== MOVE DECISION END ===");
         
         return bestMove;
     }
-
+};
 
 // ---- PyBind11 bindings ----
 PYBIND11_MODULE(student_agent_module, m) {
