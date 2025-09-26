@@ -1239,7 +1239,7 @@ const std::vector<std::pair<int,int>> MoveGenerator::DIRECTIONS = {{1,0},{-1,0},
 
 class BoardEvaluator {
 private:
-    
+    MoveGenerator* moveGenerator;
     struct ScoringArea {
         int row = 0;  // Inclusive bounds for scoring rows
         std::vector<int> score_cols;  // Scoring columns
@@ -1274,6 +1274,15 @@ private:
     }
     
 public:
+
+    BoardEvaluator(MoveGenerator* moveGen = nullptr) : moveGenerator(moveGen) {
+        // ...existing initialization...
+    }
+
+    // Setter for MoveGenerator
+    void setMoveGenerator(MoveGenerator* moveGen) {
+        moveGenerator = moveGen;
+    }
 
     float EvaluateBoard(const GameState& gameState, bool isCirclePlayer) const {
 
@@ -1320,7 +1329,7 @@ public:
             sum2+=opponent_distances[i];
         }
         
-        return sum1-sum2;
+        return sum1-0.3f*sum2;
     }
     
     float evaluateMobility(const GameState& gameState, bool isCirclePlayer) const {
@@ -1587,130 +1596,92 @@ private:
     }
 
     int distance_from_piece(const GameState& gameState, bool isCirclePlayer, const std::pair<int,int>& piece) const {
-    // Find minimum number of moves for a piece to reach any cell of scoring area using BFS
-    int piece_x = piece.first;
-    int piece_y = piece.second;
-    
-    // Check if piece is already in scoring area
-    if (gameState.isOwnScoreCell(piece_x, piece_y, isCirclePlayer)) {
-        return 0;
-    }
-    
-    int rows = gameState.getRows();
-    int cols = gameState.getCols();
-    
-    // BFS setup - replace std::set with 2D boolean array
-    std::queue<std::pair<std::pair<int,int>, int>> bfs_queue; // ((x,y), distance)
-    std::vector<std::vector<bool>> visited(rows, std::vector<bool>(cols, false));
-    
-    // Start BFS from piece position
-    bfs_queue.push({{piece_x, piece_y}, 0});
-    visited[piece_y][piece_x] = true;  // Note: visited[y][x] format
-    
-    // Direction vectors for adjacent cells
-    const int dx[] = {0, 0, 1, -1};
-    const int dy[] = {1, -1, 0, 0};
-    
-    while (!bfs_queue.empty()) {
-        auto current = bfs_queue.front();
-        bfs_queue.pop();
+        // Find minimum number of moves for a piece to reach any cell of scoring area using BFS
+        int piece_x = piece.first;
+        int piece_y = piece.second;
         
-        int curr_x = current.first.first;
-        int curr_y = current.first.second;
-        int curr_dist = current.second;
+        // Check if piece is already in scoring area
+        if (gameState.isOwnScoreCell(piece_x, piece_y, isCirclePlayer)) {
+            return 0;
+        }
         
-        // Check all 4 adjacent positions
-        for (int dir = 0; dir < 4; dir++) {
-            int next_x = curr_x + dx[dir];
-            int next_y = curr_y + dy[dir];
+        // BFS setup
+        std::queue<std::pair<std::pair<int,int>, int>> bfs_queue; // ((x,y), distance)
+        std::set<std::pair<int,int>> visited;
+        
+        // Start BFS from piece position
+        bfs_queue.push({{piece_x, piece_y}, 0});
+        visited.insert({piece_x, piece_y});
+        
+        // Direction vectors for adjacent cells
+        const int dx[] = {0, 0, 1, -1};
+        const int dy[] = {1, -1, 0, 0};
+        
+        while (!bfs_queue.empty()){
+            auto current = bfs_queue.front();
+            bfs_queue.pop();
             
-            // Skip if out of bounds
-            if (!gameState.inBounds(next_x, next_y)) continue;
+            int curr_x = current.first.first;
+            int curr_y = current.first.second;
+            int curr_dist = current.second;
             
-            // Skip if already visited - use 2D array instead of set
-            if (visited[next_y][next_x]) continue;
-            
-            uint8_t next_piece = gameState.getPiece(next_x, next_y);
-            
-            // If it's an empty cell
-            if (next_piece == EMPTY) {
-                // Check if this is a scoring cell
-                if (gameState.isOwnScoreCell(next_x, next_y, isCirclePlayer)) {
-                    return curr_dist + 1;
-                }
+            // Check all 4 adjacent positions
+            for (int dir = 0; dir < 4; dir++) {
+                int next_x = curr_x + dx[dir];
+                int next_y = curr_y + dy[dir];
                 
-                // Add to BFS queue for further exploration
-                visited[next_y][next_x] = true;  // Mark as visited
-                bfs_queue.push({{next_x, next_y}, curr_dist + 1});
-            }
-            // If it's a river piece, we can potentially flow through it
-            else if (::isRiver(next_piece)) {
-                visited[next_y][next_x] = true;  // Mark as visited
+                // Skip if out of bounds
+                if (!gameState.inBounds(next_x, next_y)) continue;
                 
-                // // Get all positions reachable through this river using river flow
-                // // Convert current GameState to board format for river flow computation
-                // std::vector<std::vector<std::map<std::string, std::string>>> board_map(rows,
-                //     std::vector<std::map<std::string, std::string>>(cols));
+                // Skip if already visited
+                if (visited.count({next_x, next_y})) continue;
                 
-                // // Populate board map (only need to populate pieces for river flow)
-                // for (const auto& pos : gameState.getCirclePiecePositions()) {
-                //     int x = pos.first, y = pos.second;
-                //     uint8_t piece = gameState.getPiece(x, y);
-                //     board_map[y][x]["owner"] = "circle";
-                //     board_map[y][x]["side"] = ::isStone(piece) ? "stone" : "river";
-                //     if (!::isStone(piece)) {
-                //         board_map[y][x]["orientation"] = ::isHorizontal(piece) ? "horizontal" : "vertical";
-                //     }
-                // }
+                uint8_t next_piece = gameState.getPiece(next_x, next_y);
                 
-                // for (const auto& pos : gameState.getSquarePiecePositions()) {
-                //     int x = pos.first, y = pos.second;
-                //     uint8_t piece = gameState.getPiece(x, y);
-                //     board_map[y][x]["owner"] = "square";
-                //     board_map[y][x]["side"] = ::isStone(piece) ? "stone" : "river";
-                //     if (!::isStone(piece)) {
-                //         board_map[y][x]["orientation"] = ::isHorizontal(piece) ? "horizontal" : "vertical";
-                //     }
-                // }
-                
-                // Use move generator's river flow to find all reachable positions
-                MoveGenerator temp_gen;
-                std::string player_str = isCirclePlayer ? "circle" : "square";
-                // auto flow_destinations = temp_gen.computeRiverFlow(
-                //     board_map, next_x, next_y, curr_x, curr_y, player_str,
-                //     rows, cols, gameState.getScoreCols(), false
-                // );
-                
-                auto flow_destinations = temp_gen.computeRiverFlowOptimized(
-                    gameState, next_x, next_y, curr_x, curr_y, isCirclePlayer, false
-                );
-
-                // Check all flow destinations
-                for (const auto& dest : flow_destinations) {
-                    int dest_x = dest.first;
-                    int dest_y = dest.second;
-                    
-                    // Skip if already visited - use 2D array instead of set
-                    if (visited[dest_y][dest_x]) continue;
-                    
-                    // Check if this destination is a scoring cell
-                    if (gameState.isOwnScoreCell(dest_x, dest_y, isCirclePlayer)) {
+                // If it's an empty cell
+                if (next_piece == EMPTY) {
+                    // Check if this is a scoring cell
+                    if (gameState.isOwnScoreCell(next_x, next_y, isCirclePlayer)) {
                         return curr_dist + 1;
                     }
                     
                     // Add to BFS queue for further exploration
-                    visited[dest_y][dest_x] = true;  // Mark as visited
-                    bfs_queue.push({{dest_x, dest_y}, curr_dist + 1});
+                    visited.insert({next_x, next_y});
+                    bfs_queue.push({{next_x, next_y}, curr_dist + 1});
                 }
+                // If it's a river piece, we can potentially flow through it
+                else if (::isRiver(next_piece)) {
+                    visited.insert({next_x, next_y});
+
+                    auto flow_destinations = moveGenerator->computeRiverFlow(
+                        gameState, next_x, next_y, curr_x, curr_y, isCirclePlayer, false);
+
+                    // Check all flow destinations
+                    for (const auto& dest : flow_destinations) {
+                        int dest_x = dest.first;
+                        int dest_y = dest.second;
+                        
+                        // Skip if already visited
+                        if (visited.count({dest_x, dest_y})) continue;
+                        
+                        // Check if this destination is a scoring cell
+                        if (gameState.isOwnScoreCell(dest_x, dest_y, isCirclePlayer)) {
+                            return curr_dist + 1;
+                        }
+                        
+                        // Add to BFS queue for further exploration
+                        visited.insert({dest_x, dest_y});
+                        bfs_queue.push({{dest_x, dest_y}, curr_dist + 1});
+                    }
+                }
+                // If it's a stone piece, we can potentially push it (but that's complex, skip for now)
+                // For simplicity, we'll only consider empty cells and river flow
             }
-            // If it's a stone piece, we can potentially push it (but that's complex, skip for now)
-            // For simplicity, we'll only consider empty cells and river flow
         }
+        
+        // If no path found to scoring area, return a large number
+            return 100;
     }
-    
-    // If no path found to scoring area, return a large number
-    return 100;
-}
     
     // Count stones adjacent to any river (for mobility evaluation)
     int countStonesAdjacentToRivers(const GameState& gameState, bool isCirclePlayer) const {
@@ -1755,17 +1726,6 @@ private:
         
         return mobile_stone_count;
     }
-    
-// public:
-//     // Clear evaluation cache (useful for testing)
-//     void clearCache() const {
-//         evaluation_cache.clear();
-//     }
-    
-//     // Get cache statistics (for performance monitoring)
-//     size_t getCacheSize() const {
-//         return evaluation_cache.size();
-//     }
 };// ==================== MINIMAX SEARCH ENGINE ====================
 
 // ==================== PHASE 5A: TIME MANAGER ====================
@@ -2050,7 +2010,7 @@ public:
         // Get all legal moves for the root position
         std::vector<Move> allRootMoves = generateMovesForPosition(position, player);
         
-        std::vector<Move> rootMoves = selectTopRootMoves(position, allRootMoves, isCirclePlayer, 20);
+        std::vector<Move> rootMoves = selectTopRootMoves(position, allRootMoves, isCirclePlayer, 32);
 
         g_logger.log(LogLevel::DEBUG, "MINIMAX: Found " + std::to_string(rootMoves.size()) + 
                     " legal moves at root");
