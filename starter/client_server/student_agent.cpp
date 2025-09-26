@@ -818,39 +818,27 @@ public:
     // Apply push move
     void applyPushMove(int from_x, int from_y, int to_x, int to_y, int push_x, int push_y) {
         if (inBounds(from_x, from_y) && inBounds(to_x, to_y) && inBounds(push_x, push_y)) {
-        uint8_t our_piece = board[from_y][from_x];
-        uint8_t pushed_piece = board[to_y][to_x];
-        uint8_t displaced_piece = board[push_y][push_x];
-        
-        // Update position tracking
-        removePiecePosition(from_x, from_y, our_piece);
-        removePiecePosition(to_x, to_y, pushed_piece);
-        removePiecePosition(push_x, push_y, displaced_piece);
-        
-        // Move pushed piece to push destination
-        board[push_y][push_x] = pushed_piece;
-        
-        // IMPORTANT: If our piece is a river, it converts to stone when pushing
-        uint8_t final_our_piece;
-        if (::isRiver(our_piece)) {
-            // River converts to stone after pushing
-            final_our_piece = ::isCircle(our_piece) ? CIRCLE_STONE : SQUARE_STONE;
-        } else {
-            // Stone remains stone
-            final_our_piece = our_piece;
+            uint8_t our_piece = board[from_y][from_x];
+            uint8_t pushed_piece = board[to_y][to_x];
+            uint8_t displaced_piece = board[push_y][push_x];
+            
+            // Update position tracking
+            removePiecePosition(from_x, from_y, our_piece);
+            removePiecePosition(to_x, to_y, pushed_piece);
+            removePiecePosition(push_x, push_y, displaced_piece);
+            
+            // Move pushed piece to push destination
+            board[push_y][push_x] = pushed_piece;
+            // Move our piece to the intermediate position
+            board[to_y][to_x] = our_piece;
+            // Clear original position
+            board[from_y][from_x] = EMPTY;
+            
+            addPiecePosition(to_x, to_y, our_piece);
+            addPiecePosition(push_x, push_y, pushed_piece);
+            
+            // computeHash();
         }
-        
-        // Move our piece (possibly converted) to the intermediate position
-        board[to_y][to_x] = final_our_piece;
-        
-        // Clear original position
-        board[from_y][from_x] = EMPTY;
-        
-        addPiecePosition(to_x, to_y, final_our_piece);
-        addPiecePosition(push_x, push_y, pushed_piece);
-        
-        // computeHash();
-    }
     }
     
     // Flip piece (stone <-> river)
@@ -969,8 +957,6 @@ std::string AILogger::moveToString(const Move& move) const {
     return ss.str();
 }
 
-
-
 // ==================== MOVE GENERATION ENGINE ====================
 
 class MoveGenerator {
@@ -989,80 +975,86 @@ private:
 public:
     // BFS-based river flow computation (mirrors sample.cpp logic exactly)
     std::vector<std::pair<int,int>> computeRiverFlow(
-    const GameState& state, int rx, int ry, int sx, int sy, 
-    bool isCirclePlayer, bool river_push = false) const {
-    
+        const std::vector<std::vector<std::map<std::string, std::string>>>& board,
+        int rx, int ry, int sx, int sy, const std::string& player,
+        int rows, int cols, const std::vector<int>& score_cols, 
+        bool river_push = false) const {
+        
         // Clear and prepare containers
         destinations_buffer.clear();
         visited_set.clear();
         bfs_queue.clear();
         bfs_queue.emplace_back(rx, ry);
         
+        // Lambda for safe board access
+        auto getCell = [&](int x, int y) -> const std::map<std::string, std::string>& {
+            return board[y][x];
+        };
+        
         while (!bfs_queue.empty()) {
             auto [x, y] = bfs_queue.front();
             bfs_queue.erase(bfs_queue.begin()); // pop_front equivalent
             
-            if (!state.inBounds(x, y)) continue;
+            if (!inBounds(x, y, rows, cols)) continue;
             if (visited_set.count({x, y})) continue;
             visited_set.insert({x, y});
             
-            uint8_t piece = state.getPiece(x, y);
+            auto cell = getCell(x, y);
             
-            // Special case for river push: treat entry cell as the source piece
+            // Special case for river push: treat entry cell as the mover
             if (river_push && x == rx && y == ry) {
-                piece = state.getPiece(sx, sy);
+                cell = getCell(sx, sy);
             }
             
             // Empty cell - potential destination
-            if (piece == EMPTY) {
-                // Block flow into opponent scoring area
-                if (!state.isOpponentScoreCell(x, y, isCirclePlayer)) {
+            if (cell.empty()) {
+                if (!isOpponentScoreCell(x, y, player, rows, cols, score_cols)) {
                     destinations_buffer.emplace_back(x, y);
                 }
                 continue;
             }
             
             // Not a river - stop flow
-            if (!::isRiver(piece)) continue;
+            if (!isRiverPiece(cell)) continue;
             
             // Get flow directions based on river orientation
             std::vector<std::pair<int,int>> flow_dirs;
-            if (::isHorizontal(piece)) {
-                flow_dirs = {{1, 0}, {-1, 0}};  // left and right
+            if (getRiverOrientationFromCell(cell) == "horizontal") {
+                flow_dirs = {{1, 0}, {-1, 0}};
             } else {
-                flow_dirs = {{0, 1}, {0, -1}};  // up and down
+                flow_dirs = {{0, 1}, {0, -1}};
             }
             
             // Follow flow in each direction
             for (auto [dx, dy] : flow_dirs) {
                 int nx = x + dx, ny = y + dy;
                 
-                while (state.inBounds(nx, ny)) {
+                while (inBounds(nx, ny, rows, cols)) {
                     // Block flow into opponent scoring area
-                    if (state.isOpponentScoreCell(nx, ny, isCirclePlayer)) break;
+                    if (isOpponentScoreCell(nx, ny, player, rows, cols, score_cols)) break;
                     
-                    uint8_t next_piece = state.getPiece(nx, ny);
+                    const auto& next_cell = getCell(nx, ny);
                     
-                    if (next_piece == EMPTY) {
+                    if (next_cell.empty()) {
                         // Empty cell - add as destination and continue flow
                         destinations_buffer.emplace_back(nx, ny);
                         nx += dx; ny += dy;
                         continue;
                     }
                     
-                    // Skip source position during flow (the piece that's moving)
+                    // Skip source position during flow
                     if (nx == sx && ny == sy) {
                         nx += dx; ny += dy;
                         continue;
                     }
                     
-                    // Another river - add to BFS queue for potential branching
-                    if (::isRiver(next_piece)) {
+                    // Another river - add to BFS queue
+                    if (isRiverPiece(next_cell)) {
                         bfs_queue.emplace_back(nx, ny);
                         break;
                     }
                     
-                    // Solid piece (stone) - stop flow in this direction
+                    // Solid piece - stop flow
                     break;
                 }
             }
@@ -1081,8 +1073,45 @@ public:
     }
 private:
     
+    // ==================== HELPER FUNCTIONS ====================
+    
     inline bool inBounds(int x, int y, int rows, int cols) const {
         return x >= 0 && x < cols && y >= 0 && y < rows;
+    }
+    
+    inline bool isOpponentScoreCell(int x, int y, const std::string& player, 
+                                   int rows, int cols, const std::vector<int>& score_cols) const {
+        auto it = std::find(score_cols.begin(), score_cols.end(), x);
+        if (it == score_cols.end()) return false;
+        
+        if (player == "circle") {
+            return y == (rows - 3); // bottom_score_row
+        } else {
+            return y == 2; // top_score_row
+        }
+    }
+    
+    inline std::string getOwnerFromCell(const std::map<std::string, std::string>& cell) const {
+        auto it = cell.find("owner");
+        return (it != cell.end()) ? it->second : "";
+    }
+    
+    inline std::string getSideFromCell(const std::map<std::string, std::string>& cell) const {
+        auto it = cell.find("side");
+        return (it != cell.end()) ? it->second : "stone";
+    }
+    
+    inline std::string getRiverOrientationFromCell(const std::map<std::string, std::string>& cell) const {
+        auto it = cell.find("orientation");
+        return (it != cell.end()) ? it->second : "horizontal";
+    }
+    
+    inline bool isRiverPiece(const std::map<std::string, std::string>& cell) const {
+        return !cell.empty() && getSideFromCell(cell) == "river";
+    }
+    
+    inline bool isStonePiece(const std::map<std::string, std::string>& cell) const {
+        return !cell.empty() && getSideFromCell(cell) == "stone";
     }
     
 public:
@@ -1105,11 +1134,34 @@ public:
         // Convert GameState to board format for existing move generation logic
         int rows = state.getRows();
         int cols = state.getCols();
+        std::vector<std::vector<std::map<std::string, std::string>>> board_map(rows,
+            std::vector<std::map<std::string, std::string>>(cols));
+        
+        // Only populate cells that have pieces (much faster than full board scan)
+        for (const auto& pos : state.getCirclePiecePositions()) {
+            int x = pos.first, y = pos.second;
+            uint8_t piece = state.getPiece(x, y);
+            board_map[y][x]["owner"] = "circle";
+            board_map[y][x]["side"] = isPieceStone(piece) ? "stone" : "river";
+            if (!isPieceStone(piece)) {
+                board_map[y][x]["orientation"] = isRiverHorizontal(piece) ? "horizontal" : "vertical";
+            }
+        }
+        
+        for (const auto& pos : state.getSquarePiecePositions()) {
+            int x = pos.first, y = pos.second;
+            uint8_t piece = state.getPiece(x, y);
+            board_map[y][x]["owner"] = "square";
+            board_map[y][x]["side"] = isPieceStone(piece) ? "stone" : "river";
+            if (!isPieceStone(piece)) {
+                board_map[y][x]["orientation"] = isRiverHorizontal(piece) ? "horizontal" : "vertical";
+            }
+        }
         
         // Generate moves only for player's pieces (O(n) where n = player piece count)
         for (const auto& pos : player_positions) {
             int x = pos.first, y = pos.second;
-            generateMovesForPiece(state, x, y, player, rows, cols, state.getScoreCols());
+            generateMovesForPiece(board_map, x, y, player, rows, cols, state.getScoreCols());
         }
         
         return move_buffer;
@@ -1122,19 +1174,19 @@ public:
     
     // Generate all moves for a single piece (mirrors sample.cpp logic)
     void generateMovesForPiece(
-        const GameState& state,  // Add GameState parameter
+        const std::vector<std::vector<std::map<std::string, std::string>>>& board,
         int x, int y, const std::string& player,
         int rows, int cols, const std::vector<int>& score_cols) {
         
-        uint8_t piece = state.getPiece(x, y);
+        const auto& cell = board[y][x];
         
         // Generate movement/push moves using valid targets
-        auto targets = computeValidTargets(state, x, y, player, rows, cols, score_cols);
+        auto targets = computeValidTargets(board, x, y, player, rows, cols, score_cols);
         
         // Add movement moves
         for (const auto& move_pos : targets.moves) {
             move_buffer.emplace_back("move", std::vector<int>{x, y}, 
-                                std::vector<int>{move_pos.first, move_pos.second});
+                                   std::vector<int>{move_pos.first, move_pos.second});
         }
         
         // Add push moves
@@ -1142,27 +1194,34 @@ public:
             const auto& own_final = push_pair.first;
             const auto& pushed_to = push_pair.second;
             move_buffer.emplace_back("push", std::vector<int>{x, y},
-                                std::vector<int>{own_final.first, own_final.second},
-                                std::vector<int>{pushed_to.first, pushed_to.second});
+                                   std::vector<int>{own_final.first, own_final.second},
+                                   std::vector<int>{pushed_to.first, pushed_to.second});
         }
         
         // Generate flip moves
-        if (::isStone(piece)) {
-            // Stone -> River (try both orientations)
+        if (isStonePiece(cell)) {
+            // Stone -> River (try both orientations if safe)
             for (const std::string& orientation : {"horizontal", "vertical"}) {
-                move_buffer.emplace_back("flip", std::vector<int>{x, y}, 
-                                    std::vector<int>{x, y}, std::vector<int>{}, orientation);
+                if (isFlipSafe(board, x, y, player, rows, cols, score_cols, orientation)) {
+                    move_buffer.emplace_back("flip", std::vector<int>{x, y}, 
+                                           std::vector<int>{x, y}, std::vector<int>{}, orientation);
+                }
             }
-        } else if (::isRiver(piece)) {
-            // River -> Stone
+        } else if (isRiverPiece(cell)) {
+            // River -> Stone (always safe)
             move_buffer.emplace_back("flip", std::vector<int>{x, y}, 
-                                std::vector<int>{x, y}, std::vector<int>{}, "");
+                                   std::vector<int>{x, y}, std::vector<int>{}, "");
         }
         
         // Generate rotate moves (only for rivers)
-        if (::isRiver(piece)) {
-            move_buffer.emplace_back("rotate", std::vector<int>{x, y}, 
-                                std::vector<int>{x, y}, std::vector<int>{}, "");
+        if (isRiverPiece(cell)) {
+            std::string current_orientation = getRiverOrientationFromCell(cell);
+            std::string new_orientation = (current_orientation == "horizontal") ? "vertical" : "horizontal";
+            
+            if (isRotateSafe(board, x, y, player, rows, cols, score_cols, new_orientation)) {
+                move_buffer.emplace_back("rotate", std::vector<int>{x, y}, 
+                                       std::vector<int>{x, y}, std::vector<int>{}, "");
+            }
         }
     }
     
@@ -1173,53 +1232,51 @@ public:
     };
     
     ValidTargets computeValidTargets(
-        const GameState& state,  // Changed from board_map to GameState
+        const std::vector<std::vector<std::map<std::string, std::string>>>& board,
         int sx, int sy, const std::string& player,
         int rows, int cols, const std::vector<int>& score_cols) const {
         
         ValidTargets targets;
-        if (!state.inBounds(sx, sy)) return targets;
+        if (!inBounds(sx, sy, rows, cols)) return targets;
         
-        uint8_t piece = state.getPiece(sx, sy);
-        if (piece == EMPTY || !isPieceOwnerFast(piece, player == "circle")) return targets;
-        
-        bool isCirclePlayer = (player == "circle");
+        const auto& piece = board[sy][sx];
+        if (piece.empty() || getOwnerFromCell(piece) != player) return targets;
         
         // Check all four directions
         for (auto [dx, dy] : DIRECTIONS) {
             int tx = sx + dx, ty = sy + dy;
-            if (!state.inBounds(tx, ty)) continue;
+            if (!inBounds(tx, ty, rows, cols)) continue;
             
             // Block movement into opponent score cells
-            if (state.isOpponentScoreCell(tx, ty, isCirclePlayer)) continue;
+            if (isOpponentScoreCell(tx, ty, player, rows, cols, score_cols)) continue;
             
-            uint8_t target_piece = state.getPiece(tx, ty);
+            const auto& target = board[ty][tx];
             
-            if (target_piece == EMPTY) {
+            if (target.empty()) {
                 // Simple move to empty cell
                 targets.moves.insert({tx, ty});
-            } else if (::isRiver(target_piece)) {
-                // Move via river flow - NEW: Use GameState-based method
-                auto flow_destinations = computeRiverFlow(state, tx, ty, sx, sy, isCirclePlayer, false);
+            } else if (isRiverPiece(target)) {
+                // Move via river flow
+                auto flow_destinations = computeRiverFlow(board, tx, ty, sx, sy, player, rows, cols, score_cols, false);
                 for (const auto& dest : flow_destinations) {
                     targets.moves.insert(dest);
                 }
             } else {
                 // Target is a stone - potential push
-                if (::isStone(piece)) {
+                if (isStonePiece(piece)) {
                     // Stone pushing stone
                     int px = tx + dx, py = ty + dy;
-                    if (state.inBounds(px, py) && 
-                        state.getPiece(px, py) == EMPTY && 
-                        !state.isOpponentScoreCell(px, py, isCirclePlayer)) {
+                    if (inBounds(px, py, rows, cols) && 
+                        board[py][px].empty() && 
+                        !isOpponentScoreCell(px, py, getOwnerFromCell(piece), rows, cols, score_cols)) {
                         targets.pushes.push_back({{tx, ty}, {px, py}});
                     }
                 } else {
                     // River pushing stone (river-push logic)
-                    bool pushedIsCircle = ::isCircle(target_piece);
-                    auto flow_destinations = computeRiverFlow(state, tx, ty, sx, sy, pushedIsCircle, true);
+                    std::string pushed_player = getOwnerFromCell(target);
+                    auto flow_destinations = computeRiverFlow(board, tx, ty, sx, sy, pushed_player, rows, cols, score_cols, true);
                     for (const auto& dest : flow_destinations) {
-                        if (!state.isOpponentScoreCell(dest.first, dest.second, pushedIsCircle)) {
+                        if (!isOpponentScoreCell(dest.first, dest.second, pushed_player, rows, cols, score_cols)) {
                             targets.pushes.push_back({{tx, ty}, dest});
                         }
                     }
@@ -1228,6 +1285,28 @@ public:
         }
         
         return targets;
+    }
+    
+    // Safety check for flip moves - prevents rivers that allow flow into opponent score    TODO - Check if this is needed 
+    bool isFlipSafe(const std::vector<std::vector<std::map<std::string, std::string>>>& board,
+                int fx, int fy, const std::string& player,
+                int rows, int cols, const std::vector<int>& score_cols,
+                const std::string& orientation) const {
+        
+        // Only basic validation - make sure it's a valid piece to flip
+        const auto& piece = board[fy][fx];
+        return !piece.empty(); // Can flip any piece (stone->river or river->stone)
+    }
+    
+    // Safety check for rotate moves - prevents rotations that allow flow into opponent score
+    bool isRotateSafe(const std::vector<std::vector<std::map<std::string, std::string>>>& board,
+                  int rx, int ry, const std::string& player,
+                  int rows, int cols, const std::vector<int>& score_cols,
+                  const std::string& new_orientation) const {
+    
+        // Only basic validation - make sure it's a river
+        const auto& piece = board[ry][rx];
+        return isRiverPiece(piece); // Can rotate any river
     }
     
 };
@@ -1239,7 +1318,7 @@ const std::vector<std::pair<int,int>> MoveGenerator::DIRECTIONS = {{1,0},{-1,0},
 
 class BoardEvaluator {
 private:
-    MoveGenerator* moveGenerator;
+    
     struct ScoringArea {
         int row = 0;  // Inclusive bounds for scoring rows
         std::vector<int> score_cols;  // Scoring columns
@@ -1249,7 +1328,7 @@ private:
     mutable ScoringArea square_scoring;
     mutable bool scoring_areas_initialized = false;
 
-    float weight1 = 100000.0f;
+    float weight1 = 1000.0f;
     float weight2 = -5.0f; //<180 onwards
     float weight4 = 0.0f;
     float weight_river_mobility = 0.1f;    // Weight for territorial reach
@@ -1275,31 +1354,21 @@ private:
     
 public:
 
-    BoardEvaluator(MoveGenerator* moveGen = nullptr) : moveGenerator(moveGen) {
-        // ...existing initialization...
-    }
-
-    // Setter for MoveGenerator
-    void setMoveGenerator(MoveGenerator* moveGen) {
-        moveGenerator = moveGen;
-    }
-
     float EvaluateBoard(const GameState& gameState, bool isCirclePlayer) const {
 
         initializeScoringAreas(gameState);
         float score1 = computeBasicEvaluation(gameState, isCirclePlayer);
         float score2 = evaluatePosition(gameState, isCirclePlayer);
-        // float score4 = evaluateMobility(gameState, isCirclePlayer);
+        float score4 = evaluateMobility(gameState, isCirclePlayer);
         
-        // float river_mobility = evaluateRiverMobility(gameState, isCirclePlayer);
-        // float river_combos = evaluateRiverCombos(gameState, isCirclePlayer);
+        float river_mobility = evaluateRiverMobility(gameState, isCirclePlayer);
+        float river_combos = evaluateRiverCombos(gameState, isCirclePlayer);
         
         float base_score = score1 * weight1 + score2 * weight2;
                     
-        // float river_score_tot = river_mobility * weight_river_mobility + river_combos * weight_river_combos;
+        float river_score_tot = river_mobility * weight_river_mobility + river_combos * weight_river_combos;
 
-        // return river_score_tot + base_score;
-        return base_score;
+        return river_score_tot + base_score;
     }
     
     float computeBasicEvaluation(const GameState& gameState, bool isCirclePlayer) const {
@@ -1308,14 +1377,14 @@ public:
         int player_scoring_stones = countStonesInScoringArea(gameState, isCirclePlayer);
         int opponent_scoring_stones = countStonesInScoringArea(gameState, !isCirclePlayer);
         
-        score += player_scoring_stones * 1.0f;   // +100 per scoring stone
-        score -= opponent_scoring_stones * 1.0f; // -100 per opponent scoring stone
+        score += player_scoring_stones * 2.0f;   // +100 per scoring stone
+        score -= opponent_scoring_stones * 2.0f; // -100 per opponent scoring stone
 
         int player_scoring_Rivers = countRiversInScoringArea(gameState, isCirclePlayer);
         int opponent_scoring_Rivers = countRiversInScoringArea(gameState, !isCirclePlayer);
         
-        score += player_scoring_Rivers * 0.5f;   // +60 per scoring River
-        score -= opponent_scoring_Rivers * 0.5f; // -60 per opponent scoring River
+        score += player_scoring_Rivers * 0.75f;   // +60 per scoring River
+        score -= opponent_scoring_Rivers * 0.75f; // -60 per opponent scoring River
         
         return score;
     }
@@ -1330,7 +1399,7 @@ public:
             sum2+=opponent_distances[i];
         }
         
-        return sum1-0.2f*sum2;
+        return sum1-sum2;
     }
     
     float evaluateMobility(const GameState& gameState, bool isCirclePlayer) const {
@@ -1410,7 +1479,7 @@ private:
     float evaluateRiverMobility(const GameState& gameState, bool isCirclePlayer) const {
         float mobility_score = 0.0f;
         const auto& player_positions = gameState.getPlayerPiecePositions(isCirclePlayer);
-        
+
         // Check each of our rivers
         for (const auto& pos : player_positions) {
             int x = pos.first, y = pos.second;
@@ -1418,60 +1487,87 @@ private:
             
             if (::isRiver(piece)) {
                 // Count positions this river can reach in opponent territory
-                int reachable_opponent_positions = countReachableOpponentPositions(gameState, x, y, isCirclePlayer);
-                mobility_score += reachable_opponent_positions * 0.3f; // 3 points per reachable position
+                float reachable_opponent_positions = countReachableOpponentPositions(gameState, x, y, isCirclePlayer);
+                mobility_score += reachable_opponent_positions * 0.15f; // 3 points per reachable position
                 
                 // Bonus for reaching scoring area specifically
-                int scoring_area_reach = countReachableScoringPositions(gameState, x, y, isCirclePlayer);
-                mobility_score += scoring_area_reach * 1.0f; // 1 point per scoring position reachable
+                float scoring_area_reach = countReachableScoringPositions(gameState, x, y, isCirclePlayer);
+                mobility_score += scoring_area_reach * 0.85f; // 1 point per scoring position reachable
             }
         }
         
         return mobility_score;
     }
 
-        // Count how many positions in opponent half this river can reach
-    int countReachableOpponentPositions(const GameState& gameState, int river_x, int river_y, bool isCirclePlayer) const {
-        int reachable_count = 0;
+    // Change return type from int to float
+    float countReachableOpponentPositions(const GameState& gameState, int river_x, int river_y, bool isCirclePlayer) const {
+        float weighted_score = 0.0f;  // Changed from int reachable_count = 0
         int opponent_half_start = isCirclePlayer ? 0 : (gameState.getRows() / 2);
         int opponent_half_end = isCirclePlayer ? (gameState.getRows() / 2) : gameState.getRows();
         
-        // Simple flow simulation - check all directions from this river
-        std::vector<std::pair<int,int>> destinations = simulateRiverFlow(gameState, river_x, river_y, isCirclePlayer);
-        
-        for (const auto& dest : destinations) {
-            int dest_y = dest.second;
-            // Count if destination is in opponent territory
-            if (dest_y >= opponent_half_start && dest_y < opponent_half_end) {
-                reachable_count++;
-            }
-        }
-        
-        return reachable_count;
-    }
-    
-        // Count how many scoring positions this river can reach
-    int countReachableScoringPositions(const GameState& gameState, int river_x, int river_y, bool isCirclePlayer) const {
-        int scoring_reach = 0;
+        // Get our goal zone info for distance calculation
         const auto& score_cols = gameState.getScoreCols();
-        int target_scoring_row = isCirclePlayer ? 2 : (gameState.getRows() - 3); // opponent's scoring row
+        int our_goal_row = isCirclePlayer ? 2 : (gameState.getRows() - 3);
         
         std::vector<std::pair<int,int>> destinations = simulateRiverFlow(gameState, river_x, river_y, isCirclePlayer);
         
         for (const auto& dest : destinations) {
             int dest_x = dest.first, dest_y = dest.second;
-            // Check if this destination is in opponent's scoring area
-            if (dest_y == target_scoring_row) {
-                for (int score_col : score_cols) {
-                    if (dest_x == score_col) {
-                        scoring_reach++;
-                        break;
+            // Check if destination is in opponent territory
+            if (dest_y >= opponent_half_start && dest_y < opponent_half_end) {
+                
+                // Calculate distance to nearest goal zone position
+                int min_distance = 100;
+                for (int goal_col : score_cols) {
+                    int distance = abs(dest_x - goal_col) + abs(dest_y - our_goal_row);
+                    min_distance = std::min(min_distance, distance);
+                }
+                
+                // Weight: closer to goal = higher score (3.0 for distance 0, decreasing to 1.0 for distance 2+)
+                float weight = std::max(1.0f, 4.0f - min_distance);
+                weighted_score += weight;
+            }
+        }
+        
+        return weighted_score;  // Changed from return reachable_count
+    }
+    
+    // Change return type from int to float  
+    float countReachableScoringPositions(const GameState& gameState, int river_x, int river_y, bool isCirclePlayer) const {
+        float weighted_score = 0.0f;  // Changed from int scoring_reach = 0
+        const auto& score_cols = gameState.getScoreCols();
+        int target_scoring_row = isCirclePlayer ? 2 : (gameState.getRows() - 3);
+        
+        std::vector<std::pair<int,int>> destinations = simulateRiverFlow(gameState, river_x, river_y, isCirclePlayer);
+        
+        for (const auto& dest : destinations) {
+            int dest_x = dest.first, dest_y = dest.second;
+            
+            // Calculate distance to nearest scoring column
+            int min_distance_to_scoring = 100;
+            for (int score_col : score_cols) {
+                int distance = abs(dest_x - score_col) + abs(dest_y - target_scoring_row);
+                min_distance_to_scoring = std::min(min_distance_to_scoring, distance);
+            }
+            
+            // Weight positions closer to scoring area more heavily
+            if (min_distance_to_scoring <= 3) {  // Only count positions reasonably close to scoring
+                float weight = std::max(1.0f, 4.0f - min_distance_to_scoring);
+                weighted_score += weight;
+                
+                // Extra bonus if this position is exactly in scoring area
+                if (dest_y == target_scoring_row) {
+                    for (int score_col : score_cols) {
+                        if (dest_x == score_col) {
+                            weighted_score += 2.0f;  // Big bonus for direct scoring positions
+                            break;
+                        }
                     }
                 }
             }
         }
         
-        return scoring_reach;
+        return weighted_score;  // Changed from return scoring_reach
     }
     
     // Simple river flow simulation - just follow the river orientation
@@ -1591,7 +1687,7 @@ private:
         const int dx[] = {0, 0, 1, -1};
         const int dy[] = {1, -1, 0, 0};
         
-        while (!bfs_queue.empty()){
+        while (!bfs_queue.empty()) {
             auto current = bfs_queue.front();
             bfs_queue.pop();
             
@@ -1626,10 +1722,43 @@ private:
                 // If it's a river piece, we can potentially flow through it
                 else if (::isRiver(next_piece)) {
                     visited.insert({next_x, next_y});
-
-                    auto flow_destinations = moveGenerator->computeRiverFlow(
-                        gameState, next_x, next_y, curr_x, curr_y, isCirclePlayer, false);
-
+                    
+                    // Get all positions reachable through this river using river flow
+                    // Convert current GameState to board format for river flow computation
+                    int rows = gameState.getRows();
+                    int cols = gameState.getCols();
+                    std::vector<std::vector<std::map<std::string, std::string>>> board_map(rows,
+                        std::vector<std::map<std::string, std::string>>(cols));
+                    
+                    // Populate board map (only need to populate pieces for river flow)
+                    for (const auto& pos : gameState.getCirclePiecePositions()) {
+                        int x = pos.first, y = pos.second;
+                        uint8_t piece = gameState.getPiece(x, y);
+                        board_map[y][x]["owner"] = "circle";
+                        board_map[y][x]["side"] = ::isStone(piece) ? "stone" : "river";
+                        if (!::isStone(piece)) {
+                            board_map[y][x]["orientation"] = ::isHorizontal(piece) ? "horizontal" : "vertical";
+                        }
+                    }
+                    
+                    for (const auto& pos : gameState.getSquarePiecePositions()) {
+                        int x = pos.first, y = pos.second;
+                        uint8_t piece = gameState.getPiece(x, y);
+                        board_map[y][x]["owner"] = "square";
+                        board_map[y][x]["side"] = ::isStone(piece) ? "stone" : "river";
+                        if (!::isStone(piece)) {
+                            board_map[y][x]["orientation"] = ::isHorizontal(piece) ? "horizontal" : "vertical";
+                        }
+                    }
+                    
+                    // Use move generator's river flow to find all reachable positions
+                    MoveGenerator temp_gen;
+                    std::string player_str = isCirclePlayer ? "circle" : "square";
+                    auto flow_destinations = temp_gen.computeRiverFlow(
+                        board_map, next_x, next_y, curr_x, curr_y, player_str,
+                        rows, cols, gameState.getScoreCols(), false
+                    );
+                    
                     // Check all flow destinations
                     for (const auto& dest : flow_destinations) {
                         int dest_x = dest.first;
@@ -1654,7 +1783,7 @@ private:
         }
         
         // If no path found to scoring area, return a large number
-            return 100;
+        return 100;
     }
     
     // Count stones adjacent to any river (for mobility evaluation)
@@ -1700,7 +1829,19 @@ private:
         
         return mobile_stone_count;
     }
+    
+// public:
+//     // Clear evaluation cache (useful for testing)
+//     void clearCache() const {
+//         evaluation_cache.clear();
+//     }
+    
+//     // Get cache statistics (for performance monitoring)
+//     size_t getCacheSize() const {
+//         return evaluation_cache.size();
+//     }
 };
+
 // ==================== MINIMAX SEARCH ENGINE ====================
 
 // ==================== PHASE 5A: TIME MANAGER ====================
@@ -1752,7 +1893,7 @@ private:
     // Allocate time for current move based on game state
     float allocateTimeForMove(float remaining_time, float opponent_time) const {
         // Safety check: always reserve emergency buffer
-        // float usable_time = std::max(0.1f, remaining_time - emergency_buffer);
+        float usable_time = std::max(0.1f, remaining_time - emergency_buffer);
         
         // // Basic time allocation strategy
         // if (remaining_time > 30.0f) {
@@ -1985,7 +2126,7 @@ public:
         // Get all legal moves for the root position
         std::vector<Move> allRootMoves = generateMovesForPosition(position, player);
         
-        std::vector<Move> rootMoves = selectTopRootMoves(position, allRootMoves, isCirclePlayer, 20);
+        std::vector<Move> rootMoves = selectTopRootMoves(position, allRootMoves, isCirclePlayer, 16);
 
         g_logger.log(LogLevel::DEBUG, "MINIMAX: Found " + std::to_string(rootMoves.size()) + 
                     " legal moves at root");
@@ -2236,7 +2377,7 @@ private:
             moves_evaluated++;
             
 
-            // Check for immediate win at root level
+            // NEW: Check for immediate win at root level
             std::string winner_after_move = newPosition.getWinner();
             if (!winner_after_move.empty()) {
                 bool we_won = (winner_after_move == "circle" && isCirclePlayer) || 
@@ -2261,44 +2402,6 @@ private:
             }
             
             
-            bool creates_goal_score = checkForGoalZoneScoring(position, newPosition, move, isCirclePlayer);
-            if (creates_goal_score) {
-                // Count how many stones this move puts in goal zone
-                int stones_gained = countStonesGainedInGoalZone(position, newPosition, isCirclePlayer);
-                
-                // Scale bonus based on how many stones gained (same as negamax)
-                float goal_zone_bonus = 500000.0f + (stones_gained * 100000.0f) + depth;
-                
-                g_logger.logHierarchical(0, "GOAL ZONE SCORING AT ROOT: +" + std::to_string(stones_gained) + 
-                                    " stones, bonus=" + std::to_string(goal_zone_bonus) + ", move: " + move_desc);
-                
-                // This is definitely a strong move - set as best
-                if (goal_zone_bonus > bestResult.evaluation) {
-                    bestResult.evaluation = goal_zone_bonus;
-                    bestResult.bestMove = move;
-                    alpha = std::max(alpha, goal_zone_bonus);
-                    
-                    g_logger.logBestMoveChange(0, move_desc, bestResult.evaluation, goal_zone_bonus);
-                    
-                    // For multiple goal stones or critical late-game moves, consider early termination
-                    if (stones_gained >= 2) {
-                        g_logger.logHierarchical(0, "MULTIPLE GOAL STONES AT ROOT - very strong move!");
-                        g_logger.log(LogLevel::INFO, "ROOT SEARCH: Found multi-stone goal zone move, highly prioritized");
-                        
-                        // Continue search but this move is extremely favored
-                        // Don't return immediately in case there's an even better move (like immediate win)
-                    }
-                    else if (stones_gained == 1) {
-                        g_logger.logHierarchical(0, "SINGLE GOAL STONE AT ROOT - strong move, continuing search");
-                    }
-
-                    return bestResult; // Return immediately, no need to search further!
-                }
-                
-                // Don't do regular minimax search for this move since we already know its high value
-                continue;
-            }
-
 
             // Search this branch with current alpha-beta window
             float evaluation = -negamax(newPosition, depth - 1, -beta, -alpha, !isCirclePlayer, 1);
@@ -2396,7 +2499,7 @@ private:
         // Generate moves for current position
         std::string currentPlayer = isCirclePlayer ? "circle" : "square";
         std::vector<Move> moves = generateMovesForPosition(position, currentPlayer);
-        
+
         if (moves.empty()) {
             // No moves available - likely a loss
             float evaluation = -50.0f;
@@ -2492,19 +2595,17 @@ private:
                 
                 // Still continue search to see if there are even better moves, but this is very promising
                 maxEval = goal_zone_bonus;
-                // best_move = move;
-                // alpha = std::max(alpha, goal_zone_bonus);
+                best_move = move;
+                alpha = std::max(alpha, goal_zone_bonus);
                 
-                // // If this move is so good it causes a cutoff, take it immediately
-                // if (beta <= alpha) {
-                //     if (current_depth <= 4) {
-                //         g_logger.logCutoff(current_depth, moves_tried, orderedMoves.size(), alpha, beta);
-                //         g_logger.logHierarchical(current_depth, "GOAL ZONE MOVE CAUSES CUTOFF!");
-                //     }
-                //     return goal_zone_bonus;
-                // }
-
-                return goal_zone_bonus; // Return immediately, no need to search further!
+                // If this move is so good it causes a cutoff, take it immediately
+                if (beta <= alpha) {
+                    if (current_depth <= 4) {
+                        g_logger.logCutoff(current_depth, moves_tried, orderedMoves.size(), alpha, beta);
+                        g_logger.logHierarchical(current_depth, "GOAL ZONE MOVE CAUSES CUTOFF!");
+                    }
+                    return goal_zone_bonus;
+                }
                 
                 continue; // Don't do recursive search for this move, we already know it's excellent
             }
@@ -2596,32 +2697,6 @@ private:
         return gained_goal_stones;
     }
 
-    int countStonesGainedInGoalZone(const GameState& before, const GameState& after, bool isCirclePlayer) const {
-        int our_goal_row = isCirclePlayer ? 2 : (before.getRows() - 3);
-        const auto& score_cols = before.getScoreCols();
-        
-        int stones_before = 0, stones_after = 0;
-        
-        for (int col : score_cols) {
-            if (before.inBounds(col, our_goal_row)) {
-                uint8_t piece_before = before.getPiece(col, our_goal_row);
-                uint8_t piece_after = after.getPiece(col, our_goal_row);
-                
-                if (::isStone(piece_before) && 
-                    ((isCirclePlayer && ::isCircle(piece_before)) || (!isCirclePlayer && ::isSquare(piece_before)))) {
-                    stones_before++;
-                }
-                
-                if (::isStone(piece_after) && 
-                    ((isCirclePlayer && ::isCircle(piece_after)) || (!isCirclePlayer && ::isSquare(piece_after)))) {
-                    stones_after++;
-                }
-            }
-        }
-        
-        return stones_after - stones_before;
-    }
-
     // Apply a move to a GameState position
     bool applyMoveToPosition(GameState& position, const Move& move) {
         try {
@@ -2645,7 +2720,7 @@ private:
                 // For push moves, we need to handle the push logic
                 // This is more complex and depends on the specific push implementation
                 // For now, we'll treat it as a basic move
-                position.applyPushMove(move.from[0], move.from[1], move.to[0], move.to[1],move.pushed_to[0], move.pushed_to[1]);
+                position.applyBasicMove(move.from[0], move.from[1], move.to[0], move.to[1]);
                 return true;
             }
             
@@ -2665,6 +2740,7 @@ public:
     void clearTT() { tt.clear(); }
 };
 
+
 // ==================== STUDENT AGENT ENGINE ====================
 class StudentAgent {
 private:
@@ -2677,11 +2753,10 @@ private:
     GameState gameState;                 // Current game state representation
 
 public:
-    explicit StudentAgent(std::string side) : side(std::move(side)), gen(rd()), gameState(5, 5), evaluator(&moveGen) {
+    explicit StudentAgent(std::string side) : side(std::move(side)), gen(rd()), gameState(5, 5) {
         // Initialize basic search engine
         g_logger.enableLogging(false);
         searchEngine = new MinimaxEngine(&evaluator, &moveGen);
-        evaluator.setMoveGenerator(&moveGen);
     }
     
     ~StudentAgent() {
